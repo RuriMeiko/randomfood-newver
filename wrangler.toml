@@ -1,4 +1,4 @@
-name = "mongo-realm-worker"
+name = "randomfood"
 type = "javascript"
 
 account_id = "14d21caaf90af471a0e8f2d520a756ab"
@@ -13,4 +13,4 @@ main = "./index.mjs"
 format = "modules"
 
 [vars]
-REALM_APPID = "MONGODB_REALM_APPID"
+REALM_APPID = "randomfood-xtgue"
