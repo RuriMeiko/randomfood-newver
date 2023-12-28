@@ -1,0 +1,16 @@
+name = "mongo-realm-worker"
+type = "javascript"
+
+account_id = "14d21caaf90af471a0e8f2d520a756ab"
+workers_dev = true # or zone_id = "<ZONE ID>" if you have one
+
+[build]
+command = "npm run build"
+
+[build.upload]
+dir = "build"
+main = "./index.mjs"
+format = "modules"
+
+[vars]
+REALM_APPID = "MONGODB_REALM_APPID"
