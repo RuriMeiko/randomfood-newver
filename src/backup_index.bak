@@ -5,11 +5,11 @@ import * as utils from "./utils";
 interface Bindings {
 	// MongoDB Realm Application ID
 	REALM_APPID: string;
-    API_TOKEN:string;
 }
 
 // Define type alias; available via `realm-web`
 type Document = globalThis.Realm.Services.MongoDB.Document;
+
 
 let App: Realm.App;
 const ObjectId = Realm.BSON.ObjectID;
@@ -22,12 +22,20 @@ const worker: ExportedHandler<Bindings> = {
 
 		const method = req.method;
 		const path = url.pathname.replace(/[/]$/, "");
+		const todoID = url.searchParams.get("id") || "";
 		if (path !== "/api/randomfood") {
 			return utils.toError(`Unknown "${path}" URL; try "/api/randomfood" instead.`, 404);
 		}
-        console.log(env);
+
+		const token = req.headers.get("authorization");
+		if (!token)
+			return utils.toError(
+				'Missing "authorization" header; try to add the header "authorization: REALM_API_KEY".',
+				401
+			);
+
 		try {
-			const credentials = Realm.Credentials.apiKey(env.API_TOKEN);
+			const credentials = Realm.Credentials.apiKey(token);
 			// Attempt to authenticate
 			var user = await App.logIn(credentials);
 			var client = user.mongoClient("mongodb-atlas");
@@ -35,21 +43,55 @@ const worker: ExportedHandler<Bindings> = {
 			return utils.toError("Error with authentication.", 500);
 		}
 
+		// Grab a reference to the "cloudflare.todos" collection
 		const collection_credit = client.db("randomfood").collection("creditdatabase");
 
 		try {
-			// POST
+			if (method === "GET") {
+				if (todoID) {
+					// GET /api/todos?id=XXX
+					return utils.reply(
+						await collection_credit.findOne({
+							_id: new ObjectId(todoID),
+						})
+					);
+				}
+
+				// GET /api/todos
+				return utils.reply(await collection_credit.find());
+			}
+
+			// POST /api/todos
 			if (method === "POST") {
-				const payload: JSON = await req.json();
-				if ("callback_query" in payload) {
-					// @ts-ignore
-					const data_callback = payload.callback_query.data;
-					console.log(data_callback);
-					// const result = await collection_credit.insertOne(data);
-					return utils.reply("ok");
-				} else {
-                    return utils.reply("ok_all");
-                }
+                let data = {}
+				data = await req.json();
+                console.log(data);
+				return utils.reply(await collection_credit.insertOne(data));
+			}
+
+			// PATCH /api/todos?id=XXX&done=true
+			if (method === "PATCH") {
+				return utils.reply(
+					await collection_credit.updateOne(
+						{
+							_id: new ObjectId(todoID),
+						},
+						{
+							$set: {
+								done: url.searchParams.get("done") === "true",
+							},
+						}
+					)
+				);
+			}
+
+			// DELETE /api/todos?id=XXX
+			if (method === "DELETE") {
+				return utils.reply(
+					await collection_credit.deleteOne({
+						_id: new ObjectId(todoID),
+					})
+				);
 			}
 
 			// unknown method

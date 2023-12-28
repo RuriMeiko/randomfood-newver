@@ -8,7 +8,7 @@
     "lib": ["es2020", "webworker"],
     "types": ["@cloudflare/workers-types"],
     "forceConsistentCasingInFileNames": true,
-    "importsNotUsedAsValues": "error",
+    "verbatimModuleSyntax": true,
     "strictFunctionTypes": true,
     "resolveJsonModule": true,
     "strictNullChecks": true,
