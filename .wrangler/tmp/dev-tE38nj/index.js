@@ -6,7 +6,7 @@ var __require = /* @__PURE__ */ ((x) => typeof require !== "undefined" ? require
   throw new Error('Dynamic require of "' + x + '" is not supported');
 });
 
-// .wrangler/tmp/bundle-i4WLiu/checked-fetch.js
+// .wrangler/tmp/bundle-w8j5Hz/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -7646,62 +7646,56 @@ function toJSON(data, status = 200) {
 function toError(error, status = 400) {
   return toJSON({ error }, status);
 }
-function reply(output) {
-  if (output != null)
-    return toJSON(output, 200);
-  return toError("Error with query", 500);
-}
+var Handler = class {
+  async processRequest(req) {
+    let request = req;
+    request.size = parseInt(request.headers.get("content-length")) || 0;
+    request.type = request.headers.get("content-type") || "";
+    if (request.size && request.type)
+      request.content = await this.getContent(request);
+    else if (request.method == "GET")
+      request.content = {
+        message: "Accessing webhook"
+      };
+    else
+      request.content = {
+        message: "",
+        error: "Invalid content type or body"
+      };
+    console.log(req);
+    return request;
+  }
+  async getContent(request) {
+    try {
+      if (request.type.includes("application/json")) {
+        return await request.json();
+      } else if (request.type.includes("text/")) {
+        return await request.text();
+      } else if (request.type.includes("form")) {
+        const formData = await request.formData();
+        const body = {};
+        for (const entry of formData.entries()) {
+          body[entry[0]] = entry[1];
+        }
+        return body;
+      } else {
+        const arrayBuff = await request.arrayBuffer();
+        const objectURL = URL.createObjectURL(arrayBuff);
+        return objectURL;
+      }
+    } catch (error) {
+      console.error(error.message);
+      return {
+        message: "",
+        error: "Invalid content/content type"
+      };
+    }
+  }
+};
 var App2;
 var ObjectId2 = bson_browser_esm_exports.ObjectID;
 var worker = {
   async fetch(req, env) {
-    async function sendMessage(text, chatId, inline_keyboard = void 0, save = false, parse_mode = "HTML") {
-      const base_url = `https://api.telegram.org/bot${env.API_TELEGRAM}/sendMessage`;
-      const params = new URLSearchParams({
-        chat_id: chatId.toString(),
-        text,
-        parse_mode
-      });
-      if (inline_keyboard) {
-        const keyboard = JSON.stringify({ inline_keyboard });
-        params.set("reply_markup", keyboard);
-      }
-      const url2 = `${base_url}?${params.toString()}`;
-      const response = await fetch(url2).then((resp) => resp.json());
-      if (save) {
-        await KV.put("last_message", `${response.result.message_id}:${text}`);
-      }
-      return response;
-    }
-    async function editMessage(text, chatId, messageId, inline_keyboard = void 0, parse_mode = "HTML") {
-      const base_url = `https://api.telegram.org/bot${env.API_TELEGRAM}/editMessageText`;
-      const params = new URLSearchParams({
-        chat_id: chatId.toString(),
-        message_id: messageId.toString(),
-        text,
-        parse_mode
-      });
-      if (inline_keyboard) {
-        const keyboard = JSON.stringify({ inline_keyboard });
-        params.set("reply_markup", keyboard);
-      }
-      const url2 = `${base_url}?${params.toString()}`;
-      const response = await fetch(url2).then((resp) => resp.json());
-      return response;
-    }
-    async function answerCallbackQuery(callbackQueryId, text = void 0, showAlert = false) {
-      const base_url = `https://api.telegram.org/bot${env.API_TELEGRAM}/answerCallbackQuery`;
-      const params = new URLSearchParams({
-        callback_query_id: callbackQueryId.toString(),
-        show_alert: showAlert.toString()
-      });
-      if (text) {
-        params.set("text", text);
-      }
-      const url2 = `${base_url}?${params.toString()}`;
-      const response = await fetch(url2).then((resp) => resp.json());
-      return response;
-    }
     const url = new URL(req.url);
     App2 = App2 || new App(env.REALM_APPID);
     const method = req.method;
@@ -7717,29 +7711,24 @@ var worker = {
       return toError("Error with authentication.", 500);
     }
     const collection_credit = client.db("randomfood").collection("creditdatabase");
+    const commands = {
+      start: async (bot2, req2, args) => await bot2.start(req2, args),
+      help: async (bot2, req2, args) => await bot2.help(req2, args),
+      debt: async (bot2, req2, args) => await bot2.debt(req2, args)
+    };
+    const botConfig = {
+      token: env.API_TELEGRAM,
+      commands: {
+        "/start": commands.start,
+        "/help": commands.help,
+        "/debt": commands.debt
+      }
+    };
+    const bot = new Handler(botConfig);
     try {
       if (method === "POST") {
         const payload = await req.json();
-        if ("callback_query" in payload) {
-          const data_callback = payload.callback_query.data;
-          console.log(data_callback);
-          return reply(payload);
-        } else if ("message" in payload) {
-          const chatId = payload.message.chat.id;
-          const textContent = payload.message.text;
-          switch (textContent) {
-            case "/start":
-              return reply(await sendMessage(JSON.stringify(payload), 1775446945));
-            case "/help":
-              return reply(await sendMessage("h\xEDp mi", 1775446945));
-            case "/debt":
-              return reply(await sendMessage("n\u1EE3 n\u1EE3", 1775446945));
-            default:
-              return reply(await sendMessage(JSON.stringify(payload), 1775446945));
-          }
-        } else {
-          return reply("ok_all");
-        }
+        bot.update(payload);
       }
       return toError("Method not allowed.", 405);
     } catch (err) {
@@ -7773,7 +7762,7 @@ var jsonError = async (request, env, _ctx, middlewareCtx) => {
 var middleware_miniflare3_json_error_default = jsonError;
 var wrap = void 0;
 
-// .wrangler/tmp/bundle-i4WLiu/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-w8j5Hz/middleware-insertion-facade.js
 var envWrappers = [wrap].filter(Boolean);
 var facade = {
   ...src_default,
@@ -7785,7 +7774,7 @@ var facade = {
 };
 var middleware_insertion_facade_default = facade;
 
-// .wrangler/tmp/bundle-i4WLiu/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-w8j5Hz/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

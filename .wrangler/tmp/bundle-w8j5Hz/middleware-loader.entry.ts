@@ -11,10 +11,10 @@ import {
 	__facade_register__,
 } from "D:\\User\\Desktop\\project_credit\\randomfood\\node_modules\\wrangler\\templates\\middleware\\common.ts";
 
-import worker from "D:\\User\\Desktop\\project_credit\\randomfood\\.wrangler\\tmp\\bundle-i4WLiu\\middleware-insertion-facade.js";
+import worker from "D:\\User\\Desktop\\project_credit\\randomfood\\.wrangler\\tmp\\bundle-w8j5Hz\\middleware-insertion-facade.js";
 
 // We need to preserve all of the exports from the worker
-export * from "D:\\User\\Desktop\\project_credit\\randomfood\\.wrangler\\tmp\\bundle-i4WLiu\\middleware-insertion-facade.js";
+export * from "D:\\User\\Desktop\\project_credit\\randomfood\\.wrangler\\tmp\\bundle-w8j5Hz\\middleware-insertion-facade.js";
 
 class __Facade_ScheduledController__ implements ScheduledController {
 	#noRetry: ScheduledController["noRetry"];
