@@ -1,27 +1,28 @@
 import * as utils from "../utils";
-
+import { supportedLanguages, type supportedLanguagesType } from "./data";
 class BotModel {
 	private token: any;
 	private commands: any;
 	private url: string;
 	message: any;
+	database: any;
 	constructor(config: any) {
 		this.token = config.token;
 		this.commands = config.commands;
-		this.url = "https://api.telegram.org/bot" + config.token;
+		this.url = "https://api.telegram.org/bot" + this.token;
+		this.database = config.database;
 	}
 	async update(request: any) {
 		try {
-			console.log(request);
 			this.message = request.content.message;
-			console.log(this.message);
+			// console.log(this.message);
 			if (this.message.hasOwnProperty("text")) {
 				// process text
 
 				// Test command and execute
 				if (!(await this.executeCommand(request))) {
 					// Test is not a command
-					await this.sendMessage("This is not a command", this.message.chat.id);
+					// await this.sendMessage("This is not a command", this.message.chat.id);
 				}
 			} else if (this.message.hasOwnProperty("photo")) {
 				// process photo
@@ -67,6 +68,25 @@ class BotModel {
 		// return 200 OK response to every update request
 		return utils.toJSON("OK");
 	}
+	escapeHtml(str: string): string {
+		const escapeMap: Record<string, string> = {
+			"&": "&amp;",
+			"<": "&lt;",
+			">": "&gt;",
+			'"': "&quot;",
+			"'": "&#39;",
+		};
+		return str.replace(/[&<>"']/g, (match) => escapeMap[match]);
+	}
+	makeHtmlCode(str: string, language: supportedLanguagesType): string {
+		// Kiểm tra xem ngôn ngữ có được hỗ trợ hay không
+		if (!supportedLanguages.includes(language)) {
+			return `<pre>${this.escapeHtml(str)}</pre>`;
+		}
+		// Tạo mã HTML với thẻ <code> và cấu trúc cho ngôn ngữ cụ thể
+		return `<pre><code class="language-${language}">${this.escapeHtml(str)}</code></pre>`;
+	}
+
 	async executeCommand(req: any) {
 		let cmdArray = this.message.text.split(" ");
 		const command = cmdArray.shift();
@@ -77,7 +97,13 @@ class BotModel {
 		}
 		return false;
 	}
-	async sendMessage(text: any, chatId: number, inline_keyboard = undefined, parse_mode = "HTML") {
+
+	async sendMessage(
+		text: string,
+		chatId: number,
+		inline_keyboard = undefined,
+		parse_mode = "HTML"
+	) {
 		// @ts-ignore
 		const base_url = `${this.url}/sendMessage`;
 		const params = new URLSearchParams({
@@ -95,7 +121,7 @@ class BotModel {
 	}
 	// Hàm edit tin nhắn tới telegram dựa vào request POST, dùng fetch để gửi
 	async editMessage(
-		text: any,
+		text: string,
 		chatId: number,
 		messageId: number,
 		inline_keyboard = undefined,
@@ -133,61 +159,89 @@ class BotModel {
 	}
 }
 
-class TelegramBot extends BotModel {
+class randomfoodBot extends BotModel {
 	constructor(config: any) {
 		super(config);
 	}
-
 	// bot command: /start
 	async start(req: any, args: any) {
+		const collectionCredit = this.database.db("randomfood").collection("creditdatabase");
+		const text = await collectionCredit.insertOne({ hi: this.message.text });
+		await this.sendMessage(
+			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
+			this.message.chat.id
+		);
+	}
+	async about(req: any, args: any) {
+		const text = "Bot này tạo ra bởi <b>nthl</b> aka <b>rurimeiko</b> ヽ(✿ﾟ▽ﾟ)ノ";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async help(req: any, args: any) {
+		// const text = "help mi";
+		const collectionCredit = this.database.db("randomfood").collection("creditdatabase");
+		const text = await collectionCredit.find();
+		await this.sendMessage(this.makeHtmlCode(JSON.stringify(text, null, 2),"JSON"), this.message.chat.id);
+	}
+	async debt(req: any, args: any) {
 		console.log(args);
-		const text = "start_nek";
+		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 }
 
 export default class Handler {
+	configs: any;
+	token: any;
+	response: Response;
+	request: any;
+	bot: randomfoodBot | undefined;
+	constructor(configs: any) {
+		this.configs = configs;
+		this.token = this.configs.token;
+		this.response = new Response();
+	}
+
+	async handle(request: any) {
+		this.request = await this.processRequest(request);
+		this.bot = new randomfoodBot({
+			database: this.configs.database,
+			token: this.token, // Bot Token
+			commands: this.configs.commands, // Bot commands
+		});
+
+		if (
+			this.request.method === "POST" &&
+			this.request.type.includes("application/json") &&
+			this.request.size > 6 &&
+			this.request.content.message
+		)
+			this.response = await this.bot.update(this.request);
+		else this.response = this.error(this.request.content.error);
+		return this.response;
+	}
+	error(error: any): Response {
+		throw new Error(error);
+	}
+
 	async processRequest(req: any) {
 		let request = req;
 		request.size = parseInt(request.headers.get("content-length")) || 0;
 		request.type = request.headers.get("content-type") || "";
 		if (request.size && request.type) request.content = await this.getContent(request);
-		else if (request.method == "GET")
-			request.content = {
-				message: "Accessing webhook",
-			};
 		else
 			request.content = {
 				message: "",
 				error: "Invalid content type or body",
 			};
-		console.log(req);
 		return request;
 	}
 	async getContent(request: any) {
-		try {
-			if (request.type.includes("application/json")) {
-				return await request.json();
-			} else if (request.type.includes("text/")) {
-				return await request.text();
-			} else if (request.type.includes("form")) {
-				const formData = await request.formData();
-				const body: any = {};
-				for (const entry of formData.entries()) {
-					body[entry[0]] = entry[1];
-				}
-				return body;
-			} else {
-				const arrayBuff = await request.arrayBuffer();
-				const objectURL = URL.createObjectURL(arrayBuff);
-				return objectURL;
-			}
-		} catch (error: any) {
-			console.error(error.message);
-			return {
-				message: "",
-				error: "Invalid content/content type",
-			};
+		if (request.type.includes("application/json")) {
+			return await request.json();
 		}
+		return {
+			message: "",
+			error: "Invalid content/content type",
+		};
 	}
 }
