@@ -1,5 +1,6 @@
 import * as utils from "../utils";
 import { supportedLanguages, type supportedLanguagesType } from "./data";
+import anni from "../anniversary";
 class BotModel {
 	private token: any;
 	private commands: any;
@@ -180,12 +181,92 @@ class randomfoodBot extends BotModel {
 		// const text = "help mi";
 		const collectionCredit = this.database.db("randomfood").collection("creditdatabase");
 		const text = await collectionCredit.find();
-		await this.sendMessage(this.makeHtmlCode(JSON.stringify(text, null, 2),"JSON"), this.message.chat.id);
+		await this.sendMessage(
+			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
+			this.message.chat.id
+		);
 	}
 	async debt(req: any, args: any) {
 		console.log(args);
+		const text = "hiiii";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async debthistory(req: any, args: any) {
+		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
+	}
+	async debtcreate(req: any, args: any) {
+		console.log(args);
+		const text = "nợ nần eo oi";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async debtpay(req: any, args: any) {
+		console.log(args);
+		const text = "nợ nần eo oi";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async debtdelete(req: any, args: any) {
+		console.log(args);
+		const text = "nợ nần eo oi";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async debthelp(req: any, args: any) {
+		console.log(args);
+		const text = "nợ nần eo oi";
+		await this.sendMessage(text, this.message.chat.id);
+	}
+	async checkdate(req: any, args: any) {
+		// Lấy thời gian hiện tại
+		function convertMilliseconds(milliseconds: number): string {
+			if (milliseconds < 0) {
+				return "Thời gian không hợp lệ";
+			}
+		
+			const secondsInAMinute = 60;
+			const secondsInAnHour = 3600;
+			const secondsInADay = 86400;
+			const secondsInAWeek = 604800;
+			const secondsInAMonth = 2629800; // Giả định tháng có 30 ngày
+			const secondsInAYear = 31557600; // Giả định năm có 365 ngày
+		
+			const seconds = milliseconds / 1000;
+		
+			if (seconds < secondsInAMinute) {
+				return `${Math.round(seconds)} giây`;
+			} else if (seconds < secondsInAnHour) {
+				return `${Math.round(seconds / secondsInAMinute)} phút`;
+			} else if (seconds < secondsInADay) {
+				return `${Math.round(seconds / secondsInAnHour)} giờ`;
+			} else if (seconds < secondsInAWeek) {
+				const days = Math.floor(seconds / secondsInADay);
+				const remainingHours = Math.floor((seconds % secondsInADay) / secondsInAnHour);
+				return `${days} ngày ${remainingHours} giờ`;
+			} else if (seconds < secondsInAMonth) {
+				const weeks = Math.floor(seconds / secondsInAWeek);
+				const remainingDays = Math.floor((seconds % secondsInAWeek) / secondsInADay);
+				return `${weeks} tuần ${remainingDays} ngày`;
+			} else if (seconds < secondsInAYear) {
+				const months = Math.floor(seconds / secondsInAMonth);
+				const remainingDays = Math.floor((seconds % secondsInAMonth) / secondsInADay);
+				const remainingHours = Math.floor((seconds % secondsInADay) / secondsInAnHour);
+				const remainingMinutes = Math.floor((seconds % secondsInAnHour) / secondsInAMinute);
+				const remainingSeconds = Math.round(seconds % secondsInAMinute);
+				return `${months} tháng ${remainingDays} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
+			} else {
+				const years = Math.floor(seconds / secondsInAYear);
+				const remainingMonths = Math.floor((seconds % secondsInAYear) / secondsInAMonth);
+				return `${years} năm ${remainingMonths} tháng`;
+			}
+		}	
+		const currentTime = new Date();
+		currentTime.setUTCHours(currentTime.getUTCHours()+7);
+		// Tính chênh lệch thời gian giữa currentTime và anni
+		const timeDifference: number = currentTime.getTime() - anni.getTime();
+		await this.sendMessage(
+			`Tổng thời gian bên eim: ${convertMilliseconds(timeDifference)}`,
+			this.message.chat.id
+		);
 	}
 }
 

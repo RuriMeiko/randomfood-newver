@@ -33,6 +33,7 @@ const worker: ExportedHandler<Bindings> = {
 				"/debtdelete": botCommands.debtdelete,
 				"/debthelp": botCommands.debthelp,
 				"/about": botCommands.about,
+				"/checkdate": botCommands.checkdate,
 			},
 		};
 		const bot = new Handler(botConfig);

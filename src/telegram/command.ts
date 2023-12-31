@@ -8,5 +8,7 @@ const botCommands = {
     debtdelete: async (bot: any, req: any, args: any) => await bot.debtdelete(req, args),
     debthelp: async (bot: any, req: any, args: any) => await bot.debthelp(req, args),
     about: async (bot: any, req: any, args: any) => await bot.about(req, args),
+    checkdate: async (bot: any, req: any, args: any) => await bot.checkdate(req, args),
+
 };
 export default botCommands;
