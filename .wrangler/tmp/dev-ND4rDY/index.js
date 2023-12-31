@@ -563,10 +563,7 @@ var randomfoodBot = class extends BotModel {
         return `${years} n\u0103m ${remainingMonths} th\xE1ng`;
       }
     }
-    const currentTime = new Date(date.toLocaleString("en-US", {
-      timeZone: ianatz
-    }));
-    ;
+    const currentTime = /* @__PURE__ */ new Date();
     currentTime.setUTCHours(currentTime.getUTCHours() + 7);
     const timeDifference = currentTime.getTime() - anniversary_default.getTime();
     await this.sendMessage(`T\u1ED5ng th\u1EDDi gian b\xEAn eim: ${convertMilliseconds(timeDifference)}`, this.message.chat.id);
@@ -4439,21 +4436,21 @@ function deserializeValue(value, options) {
   }
   if (value.$date != null) {
     var d = value.$date;
-    var date2 = /* @__PURE__ */ new Date();
+    var date = /* @__PURE__ */ new Date();
     if (options.legacy) {
       if (typeof d === "number")
-        date2.setTime(d);
+        date.setTime(d);
       else if (typeof d === "string")
-        date2.setTime(Date.parse(d));
+        date.setTime(Date.parse(d));
     } else {
       if (typeof d === "string")
-        date2.setTime(Date.parse(d));
+        date.setTime(Date.parse(d));
       else if (Long.isLong(d))
-        date2.setTime(d.toNumber());
+        date.setTime(d.toNumber());
       else if (typeof d === "number" && options.relaxed)
-        date2.setTime(d);
+        date.setTime(d);
     }
-    return date2;
+    return date;
   }
   if (value.$code != null) {
     var copy = Object.assign({}, value);
@@ -4489,9 +4486,9 @@ function serializeArray(array, options) {
     }
   });
 }
-function getISOString(date2) {
-  var isoStr = date2.toISOString();
-  return date2.getUTCMilliseconds() !== 0 ? isoStr : isoStr.slice(0, -5) + "Z";
+function getISOString(date) {
+  var isoStr = date.toISOString();
+  return date.getUTCMilliseconds() !== 0 ? isoStr : isoStr.slice(0, -5) + "Z";
 }
 function serializeValue(value, options) {
   if ((typeof value === "object" || typeof value === "function") && value !== null) {
