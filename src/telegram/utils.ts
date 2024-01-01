@@ -1,5 +1,5 @@
 import * as utils from "../utils";
-import { supportedLanguages, type supportedLanguagesType } from "./data";
+import { supportedLanguages, type InlineKeyboard, type supportedLanguagesType } from "./data";
 import anni from "../anniversary";
 import type MongoDB from "../mongodb/init";
 class BotModel {
@@ -53,16 +53,25 @@ class BotModel {
 			} else if (this.message.hasOwnProperty("reply_to_message")) {
 				// process reply of a message
 				console.log(this.message.reply_to_message);
-			} else if (this.message.hasOwnProperty("callback_query")) {
-				console.log(this.message.callback_query);
-				// payload.callback_query.data;
-				// console.log(data_callback);
-				// // const result = await collection_credit.insertOne(data);
-				// return utils.reply(payload);
 			} else {
 				// process unknown type
 				console.log(this.message);
 			}
+		} catch (error: JSON | any) {
+			console.error(error);
+			return utils.toError(error.message);
+		}
+		// return 200 OK response to every update request
+		return utils.toJSON("OK");
+	}
+	async updateCallback(request: any) {
+		try {
+			this.message = request.content.callback_query;
+
+			await this.sendMessage(
+				this.makeHtmlCode(JSON.stringify(this.message, null, 2), "JSON"),
+				this.message.message.chat.id
+			);
 		} catch (error: JSON | any) {
 			console.error(error);
 			return utils.toError(error.message);
@@ -103,7 +112,7 @@ class BotModel {
 	async sendMessage(
 		text: string,
 		chatId: number,
-		inline_keyboard = undefined,
+		inline_keyboard: InlineKeyboard | undefined = undefined,
 		parse_mode = "HTML"
 	) {
 		// @ts-ignore
@@ -126,7 +135,7 @@ class BotModel {
 		text: string,
 		chatId: number,
 		messageId: number,
-		inline_keyboard = undefined,
+		inline_keyboard: InlineKeyboard | undefined = undefined,
 		parse_mode = "HTML"
 	) {
 		// @ts-ignore
@@ -145,7 +154,11 @@ class BotModel {
 		const response = await fetch(url).then((resp) => resp.json());
 		return response;
 	}
-	async answerCallbackQuery(callbackQueryId: number, text = undefined, showAlert = false) {
+	async answerCallbackQuery(
+		callbackQueryId: number,
+		text: string | undefined = undefined,
+		showAlert: boolean = false
+	) {
 		// @ts-ignore
 		const base_url = `${this.url}/answerCallbackQuery`;
 		const params = new URLSearchParams({
@@ -190,39 +203,35 @@ class randomfoodBot extends BotModel {
 	}
 	async randomfood(req: any, args: any) {
 		const text = "randomnek";
-		await this.sendMessage(text, this.message.chat.id);
+
+		const inline_keyboard: InlineKeyboard = [[{ text: "okiii ❤️", callback_data: "hiem" }]];
+		await this.sendMessage(text, this.message.chat.id, inline_keyboard);
 	}
 	async debt(req: any, args: any) {
 		const text = "hiiii";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debthistory(req: any, args: any) {
-		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtcreate(req: any, args: any) {
-		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtpay(req: any, args: any) {
-		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtdelete(req: any, args: any) {
-		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debthelp(req: any, args: any) {
-		console.log(args);
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async checkdate(req: any, args: any) {
-		// Lấy thời gian hiện tại
 		if (this.message.from.id === 1775446945 || this.message.from.id === 6831903438) {
 			function convertMilliseconds(milliseconds: number, check: boolean = false): string {
 				if (milliseconds < 0) {
@@ -365,7 +374,14 @@ export default class Handler {
 			this.request.content.message
 		)
 			this.response = await this.bot.update(this.request);
-		else this.response = this.error(this.request.content.error);
+		else if (
+			this.request.method === "POST" &&
+			this.request.type.includes("application/json") &&
+			this.request.size > 6 &&
+			this.request.content.callback_query
+		) {
+			this.response = await this.bot.updateCallback(this.request);
+		} else this.response = this.error(this.request.content.error);
 
 		return this.response;
 	}

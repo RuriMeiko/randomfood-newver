@@ -283,6 +283,11 @@ export const supportedLanguages = [
 	"YANG",
 	"Zig",
 ];
+interface InlineButton {
+	text: string;
+	callback_data: string;
+}
+export type InlineKeyboard = InlineButton[][];
 
 export type supportedLanguagesType =
 	| "Markup"
