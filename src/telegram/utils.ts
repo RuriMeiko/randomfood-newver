@@ -1,12 +1,13 @@
 import * as utils from "../utils";
 import { supportedLanguages, type supportedLanguagesType } from "./data";
 import anni from "../anniversary";
+import type MongoDB from "../mongodb/init";
 class BotModel {
 	private token: any;
 	private commands: any;
 	private url: string;
 	message: any;
-	database: any;
+	database: MongoDB;
 	constructor(config: any) {
 		this.token = config.token;
 		this.commands = config.commands;
@@ -166,8 +167,10 @@ class randomfoodBot extends BotModel {
 	}
 	// bot command: /start
 	async start(req: any, args: any) {
-		const collectionCredit = this.database.db("randomfood").collection("creditdatabase");
-		const text = await collectionCredit.insertOne({ hi: this.message.text });
+		const text = await this.database
+			.db("randomfood")
+			.collection("creditdatabase")
+			.insertOne({ hi: this.message.text });
 		await this.sendMessage(
 			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
 			this.message.chat.id
@@ -179,15 +182,13 @@ class randomfoodBot extends BotModel {
 	}
 	async help(req: any, args: any) {
 		// const text = "help mi";
-		const collectionCredit = this.database.db("randomfood").collection("creditdatabase");
-		const text = await collectionCredit.find();
+		const text = await this.database.db("randomfood").collection("creditdatabase").find();
 		await this.sendMessage(
 			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
 			this.message.chat.id
 		);
 	}
 	async debt(req: any, args: any) {
-		console.log(args);
 		const text = "hiiii";
 		await this.sendMessage(text, this.message.chat.id);
 	}
@@ -222,16 +223,16 @@ class randomfoodBot extends BotModel {
 			if (milliseconds < 0) {
 				return "Thời gian không hợp lệ";
 			}
-		
+
 			const secondsInAMinute = 60;
 			const secondsInAnHour = 3600;
 			const secondsInADay = 86400;
 			const secondsInAWeek = 604800;
 			const secondsInAMonth = 2629800; // Giả định tháng có 30 ngày
 			const secondsInAYear = 31557600; // Giả định năm có 365 ngày
-		
+
 			const seconds = milliseconds / 1000;
-		
+
 			if (seconds < secondsInAMinute) {
 				return `${Math.round(seconds)} giây`;
 			} else if (seconds < secondsInAnHour) {
@@ -258,9 +259,9 @@ class randomfoodBot extends BotModel {
 				const remainingMonths = Math.floor((seconds % secondsInAYear) / secondsInAMonth);
 				return `${years} năm ${remainingMonths} tháng`;
 			}
-		}	
+		}
 		const currentTime = new Date();
-		currentTime.setUTCHours(currentTime.getUTCHours()+7);
+		currentTime.setUTCHours(currentTime.getUTCHours() + 7);
 		// Tính chênh lệch thời gian giữa currentTime và anni
 		const timeDifference: number = currentTime.getTime() - anni.getTime();
 		await this.sendMessage(
@@ -298,6 +299,7 @@ export default class Handler {
 		)
 			this.response = await this.bot.update(this.request);
 		else this.response = this.error(this.request.content.error);
+
 		return this.response;
 	}
 	error(error: any): Response {

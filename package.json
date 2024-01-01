@@ -1,12 +1,11 @@
 {
   "private": true,
-  "name": "test-realm",
+  "name": "randomfood",
   "scripts": {
     "build": "worktop build src/index.ts",
     "types": "tsc --noEmit --skipLibCheck"
   },
   "dependencies": {
-    "realm-web": "^1.5.1",
     "wrangler": "^3.22.1"
   },
   "devDependencies": {
