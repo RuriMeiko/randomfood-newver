@@ -559,7 +559,6 @@ var randomfoodBot = class extends BotModel {
       const timeDifference = currentTime.getTime() - anniversary_default.getTime();
       await this.sendMessage(`${this.makeHtmlCode(`#loveYouUntilTheWorldEnd {
 					time: ${convertMilliseconds(timeDifference)};
-					}
 					day: ${convertMilliseconds(timeDifference, true)};
 					}`, "CSS")}`, this.message.chat.id);
     } else
