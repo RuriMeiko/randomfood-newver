@@ -504,48 +504,65 @@ var randomfoodBot = class extends BotModel {
     await this.sendMessage(text, this.message.chat.id);
   }
   async checkdate(req, args) {
-    function convertMilliseconds(milliseconds) {
-      if (milliseconds < 0) {
-        return "Th\u1EDDi gian kh\xF4ng h\u1EE3p l\u1EC7";
-      }
-      const secondsInAMinute = 60;
-      const secondsInAnHour = 3600;
-      const secondsInADay = 86400;
-      const secondsInAWeek = 604800;
-      const secondsInAMonth = 2629800;
-      const secondsInAYear = 31557600;
-      const seconds = milliseconds / 1e3;
-      if (seconds < secondsInAMinute) {
-        return `${Math.round(seconds)} gi\xE2y`;
-      } else if (seconds < secondsInAnHour) {
-        return `${Math.round(seconds / secondsInAMinute)} ph\xFAt`;
-      } else if (seconds < secondsInADay) {
-        return `${Math.round(seconds / secondsInAnHour)} gi\u1EDD`;
-      } else if (seconds < secondsInAWeek) {
-        const days = Math.floor(seconds / secondsInADay);
-        const remainingHours = Math.floor(seconds % secondsInADay / secondsInAnHour);
-        return `${days} ng\xE0y ${remainingHours} gi\u1EDD`;
-      } else if (seconds < secondsInAMonth) {
-        const weeks = Math.floor(seconds / secondsInAWeek);
-        const remainingDays = Math.floor(seconds % secondsInAWeek / secondsInADay);
-        return `${weeks} tu\u1EA7n ${remainingDays} ng\xE0y`;
-      } else if (seconds < secondsInAYear) {
-        const months = Math.floor(seconds / secondsInAMonth);
-        const remainingDays = Math.floor(seconds % secondsInAMonth / secondsInADay);
-        const remainingHours = Math.floor(seconds % secondsInADay / secondsInAnHour);
-        const remainingMinutes = Math.floor(seconds % secondsInAnHour / secondsInAMinute);
-        const remainingSeconds = Math.round(seconds % secondsInAMinute);
-        return `${months} th\xE1ng ${remainingDays} ng\xE0y ${remainingHours} gi\u1EDD ${remainingMinutes} ph\xFAt ${remainingSeconds} gi\xE2y`;
-      } else {
-        const years = Math.floor(seconds / secondsInAYear);
-        const remainingMonths = Math.floor(seconds % secondsInAYear / secondsInAMonth);
-        return `${years} n\u0103m ${remainingMonths} th\xE1ng`;
-      }
-    }
-    const currentTime = /* @__PURE__ */ new Date();
-    currentTime.setUTCHours(currentTime.getUTCHours() + 7);
-    const timeDifference = currentTime.getTime() - anniversary_default.getTime();
-    await this.sendMessage(`T\u1ED5ng th\u1EDDi gian b\xEAn eim: ${convertMilliseconds(timeDifference)}`, this.message.chat.id);
+    if (this.message.from.id === 1775446945 || this.message.from.id === 6831903438) {
+      let convertMilliseconds = function(milliseconds, check = false) {
+        if (milliseconds < 0) {
+          return "Th\u1EDDi gian kh\xF4ng h\u1EE3p l\u1EC7";
+        }
+        const secondsInAMinute = 60;
+        const secondsInAnHour = 3600;
+        const secondsInADay = 86400;
+        const secondsInAWeek = 604800;
+        const secondsInAMonth = 2592e3;
+        const secondsInAYear = 31536e3;
+        const seconds = milliseconds / 1e3;
+        if (seconds < secondsInAMinute) {
+          return `${Math.round(seconds)} gi\xE2y`;
+        } else if (seconds < secondsInAnHour) {
+          return `${Math.round(seconds / secondsInAMinute)} ph\xFAt`;
+        } else if (seconds < secondsInADay) {
+          return `${Math.round(seconds / secondsInAnHour)} gi\u1EDD`;
+        } else if (seconds < secondsInAWeek || check) {
+          const days = Math.floor(seconds / secondsInADay);
+          const remainingHours = Math.floor(seconds % secondsInADay / secondsInAnHour);
+          const remainingMinutes = Math.floor(seconds % secondsInADay % secondsInAnHour / secondsInAMinute);
+          const remainingSeconds = Math.round(seconds % secondsInADay % secondsInAnHour % secondsInAMinute);
+          return `${days} ng\xE0y ${remainingHours} gi\u1EDD ${remainingMinutes} ph\xFAt ${remainingSeconds} gi\xE2y`;
+        } else if (seconds < secondsInAMonth) {
+          const weeks = Math.floor(seconds / secondsInAWeek);
+          const remainingDays = Math.floor(seconds % secondsInAWeek / secondsInADay);
+          const remainingHours = Math.floor(seconds % secondsInAWeek % secondsInADay / secondsInAnHour);
+          const remainingMinutes = Math.floor(seconds % secondsInAWeek % secondsInADay % secondsInAnHour / secondsInAMinute);
+          const remainingSeconds = Math.round(seconds % secondsInAWeek % secondsInADay % secondsInAnHour % secondsInAMinute);
+          return `${weeks} tu\u1EA7n ${remainingDays} ng\xE0y ${remainingHours} gi\u1EDD ${remainingMinutes} ph\xFAt ${remainingSeconds} gi\xE2y`;
+        } else if (seconds < secondsInAYear) {
+          const months = Math.floor(seconds / secondsInAMonth);
+          const remainingweeks = Math.floor(seconds % secondsInAMonth / secondsInAWeek);
+          const remainingDays = Math.floor(seconds % secondsInAMonth % secondsInAWeek / secondsInADay);
+          const remainingHours = Math.floor(seconds % secondsInAMonth % secondsInAWeek % secondsInADay / secondsInAnHour);
+          const remainingMinutes = Math.floor(seconds % secondsInAMonth % secondsInAWeek % secondsInADay % secondsInAnHour / secondsInAMinute);
+          const remainingSeconds = Math.round(seconds % secondsInAMonth % secondsInAWeek % secondsInADay % secondsInAnHour % secondsInAMinute);
+          return `${months} th\xE1ng ${remainingweeks} tu\u1EA7n ${remainingDays} ng\xE0y ${remainingHours} gi\u1EDD ${remainingMinutes} ph\xFAt ${remainingSeconds} gi\xE2y`;
+        } else {
+          const years = Math.floor(seconds / secondsInAYear);
+          const remainingMonths = Math.floor(seconds % secondsInAYear / secondsInAMonth);
+          const remainingweeks = Math.floor(seconds % secondsInAYear % secondsInAMonth / secondsInAWeek);
+          const remainingDays = Math.floor(seconds % secondsInAYear % secondsInAMonth % secondsInAWeek / secondsInADay);
+          const remainingHours = Math.floor(seconds % secondsInAYear % secondsInAMonth % secondsInAWeek % secondsInADay / secondsInAnHour);
+          const remainingMinutes = Math.floor(seconds % secondsInAYear % secondsInAMonth % secondsInAWeek % secondsInADay % secondsInAnHour / secondsInAMinute);
+          const remainingSeconds = Math.round(seconds % secondsInAYear % secondsInAMonth % secondsInAWeek % secondsInADay % secondsInAnHour % secondsInAMinute);
+          return `${years} n\u0103m ${remainingMonths} th\xE1ng ${remainingweeks} tu\u1EA7n ${remainingDays} ng\xE0y ${remainingHours} gi\u1EDD ${remainingMinutes} ph\xFAt ${remainingSeconds} gi\xE2y`;
+        }
+      };
+      const currentTime = /* @__PURE__ */ new Date();
+      currentTime.setUTCHours(currentTime.getUTCHours() + 7);
+      const timeDifference = currentTime.getTime() - anniversary_default.getTime();
+      await this.sendMessage(`${this.makeHtmlCode(`#loveYouUntilTheWorldEnd {
+					time: ${convertMilliseconds(timeDifference)};
+					day: ${convertMilliseconds(timeDifference, true)};
+					}`, "CSS")}`, this.message.chat.id);
+    } else
+      await this.sendMessage("Ki\u1EBFm ngiu \u0111i m\u1EA5y a zai!", this.message.chat.id);
   }
 };
 var Handler = class {

@@ -223,55 +223,118 @@ class randomfoodBot extends BotModel {
 	}
 	async checkdate(req: any, args: any) {
 		// Lấy thời gian hiện tại
-		function convertMilliseconds(milliseconds: number): string {
-			if (milliseconds < 0) {
-				return "Thời gian không hợp lệ";
+		if (this.message.from.id === 1775446945 || this.message.from.id === 6831903438) {
+			function convertMilliseconds(milliseconds: number, check: boolean = false): string {
+				if (milliseconds < 0) {
+					return "Thời gian không hợp lệ";
+				}
+				const secondsInAMinute = 60;
+				const secondsInAnHour = 3600;
+				const secondsInADay = 86400;
+				const secondsInAWeek = 604800;
+				const secondsInAMonth = 2592000; // Giả định tháng có 30 ngày
+				const secondsInAYear = 31536000; // Giả định năm có 365 ngày
+				const seconds = milliseconds / 1000;
+				if (seconds < secondsInAMinute) {
+					return `${Math.round(seconds)} giây`;
+				} else if (seconds < secondsInAnHour) {
+					return `${Math.round(seconds / secondsInAMinute)} phút`;
+				} else if (seconds < secondsInADay) {
+					return `${Math.round(seconds / secondsInAnHour)} giờ`;
+				} else if (seconds < secondsInAWeek || check) {
+					const days = Math.floor(seconds / secondsInADay);
+					const remainingHours = Math.floor((seconds % secondsInADay) / secondsInAnHour);
+					const remainingMinutes = Math.floor(
+						((seconds % secondsInADay) % secondsInAnHour) / secondsInAMinute
+					);
+					const remainingSeconds = Math.round(
+						((seconds % secondsInADay) % secondsInAnHour) % secondsInAMinute
+					);
+					return `${days} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
+				} else if (seconds < secondsInAMonth) {
+					const weeks = Math.floor(seconds / secondsInAWeek);
+					const remainingDays = Math.floor((seconds % secondsInAWeek) / secondsInADay);
+					const remainingHours = Math.floor(
+						((seconds % secondsInAWeek) % secondsInADay) / secondsInAnHour
+					);
+					const remainingMinutes = Math.floor(
+						(((seconds % secondsInAWeek) % secondsInADay) % secondsInAnHour) /
+							secondsInAMinute
+					);
+					const remainingSeconds = Math.round(
+						(((seconds % secondsInAWeek) % secondsInADay) % secondsInAnHour) %
+							secondsInAMinute
+					);
+					return `${weeks} tuần ${remainingDays} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
+				} else if (seconds < secondsInAYear) {
+					const months = Math.floor(seconds / secondsInAMonth);
+					const remainingweeks = Math.floor((seconds % secondsInAMonth) / secondsInAWeek);
+					const remainingDays = Math.floor(
+						((seconds % secondsInAMonth) % secondsInAWeek) / secondsInADay
+					);
+					const remainingHours = Math.floor(
+						(((seconds % secondsInAMonth) % secondsInAWeek) % secondsInADay) /
+							secondsInAnHour
+					);
+					const remainingMinutes = Math.floor(
+						((((seconds % secondsInAMonth) % secondsInAWeek) % secondsInADay) %
+							secondsInAnHour) /
+							secondsInAMinute
+					);
+					const remainingSeconds = Math.round(
+						((((seconds % secondsInAMonth) % secondsInAWeek) % secondsInADay) %
+							secondsInAnHour) %
+							secondsInAMinute
+					);
+					return `${months} tháng ${remainingweeks} tuần ${remainingDays} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
+				} else {
+					const years = Math.floor(seconds / secondsInAYear);
+					const remainingMonths = Math.floor(
+						(seconds % secondsInAYear) / secondsInAMonth
+					);
+					const remainingweeks = Math.floor(
+						((seconds % secondsInAYear) % secondsInAMonth) / secondsInAWeek
+					);
+					const remainingDays = Math.floor(
+						(((seconds % secondsInAYear) % secondsInAMonth) % secondsInAWeek) /
+							secondsInADay
+					);
+					const remainingHours = Math.floor(
+						((((seconds % secondsInAYear) % secondsInAMonth) % secondsInAWeek) %
+							secondsInADay) /
+							secondsInAnHour
+					);
+					const remainingMinutes = Math.floor(
+						(((((seconds % secondsInAYear) % secondsInAMonth) % secondsInAWeek) %
+							secondsInADay) %
+							secondsInAnHour) /
+							secondsInAMinute
+					);
+					const remainingSeconds = Math.round(
+						(((((seconds % secondsInAYear) % secondsInAMonth) % secondsInAWeek) %
+							secondsInADay) %
+							secondsInAnHour) %
+							secondsInAMinute
+					);
+
+					return `${years} năm ${remainingMonths} tháng ${remainingweeks} tuần ${remainingDays} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
+				}
 			}
-
-			const secondsInAMinute = 60;
-			const secondsInAnHour = 3600;
-			const secondsInADay = 86400;
-			const secondsInAWeek = 604800;
-			const secondsInAMonth = 2629800; // Giả định tháng có 30 ngày
-			const secondsInAYear = 31557600; // Giả định năm có 365 ngày
-
-			const seconds = milliseconds / 1000;
-
-			if (seconds < secondsInAMinute) {
-				return `${Math.round(seconds)} giây`;
-			} else if (seconds < secondsInAnHour) {
-				return `${Math.round(seconds / secondsInAMinute)} phút`;
-			} else if (seconds < secondsInADay) {
-				return `${Math.round(seconds / secondsInAnHour)} giờ`;
-			} else if (seconds < secondsInAWeek) {
-				const days = Math.floor(seconds / secondsInADay);
-				const remainingHours = Math.floor((seconds % secondsInADay) / secondsInAnHour);
-				return `${days} ngày ${remainingHours} giờ`;
-			} else if (seconds < secondsInAMonth) {
-				const weeks = Math.floor(seconds / secondsInAWeek);
-				const remainingDays = Math.floor((seconds % secondsInAWeek) / secondsInADay);
-				return `${weeks} tuần ${remainingDays} ngày`;
-			} else if (seconds < secondsInAYear) {
-				const months = Math.floor(seconds / secondsInAMonth);
-				const remainingDays = Math.floor((seconds % secondsInAMonth) / secondsInADay);
-				const remainingHours = Math.floor((seconds % secondsInADay) / secondsInAnHour);
-				const remainingMinutes = Math.floor((seconds % secondsInAnHour) / secondsInAMinute);
-				const remainingSeconds = Math.round(seconds % secondsInAMinute);
-				return `${months} tháng ${remainingDays} ngày ${remainingHours} giờ ${remainingMinutes} phút ${remainingSeconds} giây`;
-			} else {
-				const years = Math.floor(seconds / secondsInAYear);
-				const remainingMonths = Math.floor((seconds % secondsInAYear) / secondsInAMonth);
-				return `${years} năm ${remainingMonths} tháng`;
-			}
-		}
-		const currentTime = new Date();
-		currentTime.setUTCHours(currentTime.getUTCHours() + 7);
-		// Tính chênh lệch thời gian giữa currentTime và anni
-		const timeDifference: number = currentTime.getTime() - anni.getTime();
-		await this.sendMessage(
-			`Tổng thời gian bên eim: ${convertMilliseconds(timeDifference)}`,
-			this.message.chat.id
-		);
+			const currentTime = new Date();
+			currentTime.setUTCHours(currentTime.getUTCHours() + 7);
+			// Tính chênh lệch thời gian giữa currentTime và anni
+			const timeDifference: number = currentTime.getTime() - anni.getTime();
+			await this.sendMessage(
+				`${this.makeHtmlCode(
+					`#loveYouUntilTheWorldEnd {
+					time: ${convertMilliseconds(timeDifference)};
+					day: ${convertMilliseconds(timeDifference, true)};
+					}`,
+					"CSS"
+				)}`,
+				this.message.chat.id
+			);
+		} else await this.sendMessage("Kiếm ngiu đi mấy a zai!", this.message.chat.id);
 	}
 }
 
