@@ -188,6 +188,10 @@ class randomfoodBot extends BotModel {
 			this.message.chat.id
 		);
 	}
+	async randomfood(req: any, args: any) {
+		const text = "randomnek";
+		await this.sendMessage(text, this.message.chat.id);
+	}
 	async debt(req: any, args: any) {
 		const text = "hiiii";
 		await this.sendMessage(text, this.message.chat.id);
