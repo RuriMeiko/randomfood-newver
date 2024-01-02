@@ -5,7 +5,7 @@ export default class BingImageCreater {
 	constructor(authCookie: string) {
 		this.authCookie = authCookie;
 		this.sessionCookies.push(`_U=${this.authCookie}`);
-		this.BING_URL = "https://cn.bing.com";
+		this.BING_URL = "https://www.bing.com";
 	}
 	private async makeSessionFetch(url: string, method: string = "GET") {
 		const defaultOptions: any = {
@@ -134,8 +134,8 @@ export default class BingImageCreater {
 			if (badImages.includes(im)) {
 				throw new Error("Bad images");
 			}
-			// if (!im.includes(".svg")) validImageLinks.push(im);
+			if (!im.endsWith(".svg")) validImageLinks.push(im);
 		}
-		return normalImageLinks;
+		return validImageLinks;
 	}
 }
