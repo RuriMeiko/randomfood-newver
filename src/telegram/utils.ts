@@ -112,65 +112,135 @@ class BotModel {
 	async sendMessage(
 		text: string,
 		chatId: number,
-		inline_keyboard: InlineKeyboard | undefined = undefined,
-		parse_mode = "HTML"
+		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		parseMode: string = "HTML"
 	) {
-		// @ts-ignore
 		const base_url = `${this.url}/sendMessage`;
-		const params = new URLSearchParams({
-			chat_id: chatId.toString(),
+		const url = `${base_url}?parse_mode=${parseMode}`;
+
+		const body = {
+			chat_id: chatId,
 			text: text,
-			parse_mode: parse_mode,
-		});
-		if (inline_keyboard) {
-			const keyboard = JSON.stringify({ inline_keyboard: inline_keyboard });
-			params.set("reply_markup", keyboard);
+			parse_mode: parseMode,
+			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+		};
+
+		try {
+			const response: Response = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error sending message:", error.message);
+			return null;
 		}
-		const url = `${base_url}?${params.toString()}`;
-		const response = await fetch(url).then((resp) => resp.json());
-		return response;
 	}
+	async sendMediaGroup(
+		photoUrls: string[],
+		chatId: number,
+		caption: string = "",
+		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		parseMode: string = "HTML"
+	) {
+		const base_url = `${this.url}/sendMediaGroup`;
+		const url = base_url;
+
+		const photos = photoUrls.map((photoUrl) => ({
+			type: "photo",
+			media: photoUrl,
+		}));
+
+		const body = {
+			chat_id: chatId,
+			media: photos,
+			parse_mode: parseMode,
+			caption: caption,
+			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+		};
+
+		try {
+			const response = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error sending photos:", error.message);
+			return null;
+		}
+	}
+
 	// Hàm edit tin nhắn tới telegram dựa vào request POST, dùng fetch để gửi
 	async editMessage(
 		text: string,
 		chatId: number,
 		messageId: number,
-		inline_keyboard: InlineKeyboard | undefined = undefined,
-		parse_mode = "HTML"
+		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		parseMode: string = "HTML"
 	) {
-		// @ts-ignore
 		const base_url = `${this.url}/editMessageText`;
-		const params = new URLSearchParams({
-			chat_id: chatId.toString(),
-			message_id: messageId.toString(),
+		const url = base_url;
+
+		const body = {
+			chat_id: chatId,
+			message_id: messageId,
 			text: text,
-			parse_mode: parse_mode,
-		});
-		if (inline_keyboard) {
-			const keyboard = JSON.stringify({ inline_keyboard: inline_keyboard });
-			params.set("reply_markup", keyboard);
+			parse_mode: parseMode,
+			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+		};
+
+		try {
+			const response = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error editing message:", error.message);
+			return null;
 		}
-		const url = `${base_url}?${params.toString()}`;
-		const response = await fetch(url).then((resp) => resp.json());
-		return response;
 	}
 	async answerCallbackQuery(
 		callbackQueryId: number,
 		text: string | undefined = undefined,
 		showAlert: boolean = false
 	) {
-		// @ts-ignore
 		const base_url = `${this.url}/answerCallbackQuery`;
-		const params = new URLSearchParams({
-			callback_query_id: callbackQueryId.toString(),
-			show_alert: showAlert.toString(),
-		});
-		if (text) {
-			params.set("text", text);
+		const url = base_url;
+
+		const body = {
+			callback_query_id: callbackQueryId,
+			text: text,
+			show_alert: showAlert,
+		};
+
+		try {
+			const response = await fetch(url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error answering callback query:", error.message);
+			return null;
 		}
-		const url = `${base_url}?${params.toString()}`;
-		const response = await fetch(url).then((resp) => resp.json());
-		return response;
 	}
 }
 
@@ -206,6 +276,16 @@ class randomfoodBot extends BotModel {
 
 		const inline_keyboard: InlineKeyboard = [[{ text: "okiii ❤️", callback_data: "hiem" }]];
 		await this.sendMessage(text, this.message.chat.id, inline_keyboard);
+		console.log(
+			await this.sendMediaGroup(
+				[
+					"https://assets-global.website-files.com/6030eb20edb267a2d11d31f6/6333fc293b605c2366de60e4_TelegramLinkCoverImage_fd534fc09bd64f9ffe1770aad70e6dd5_2000.png",
+				],
+				this.message.chat.id,
+				"okbro",
+				inline_keyboard
+			)
+		);
 	}
 	async debt(req: any, args: any) {
 		const text = "hiiii";
@@ -216,8 +296,12 @@ class randomfoodBot extends BotModel {
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtcreate(req: any, args: any) {
-		const text = "nợ nần eo oi";
-		await this.sendMessage(text, this.message.chat.id);
+		const text = this.message.text;
+		// const imgLink = await this.genimage.getImages(text.slice(11));
+		// console.log(imgLink);
+		// await this.sendMediaGroup(imgLink, this.message.chat.id, "okbro");
+		// const text = "nợ nần eo oi";
+		// await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtpay(req: any, args: any) {
 		const text = "nợ nần eo oi";
@@ -348,11 +432,11 @@ class randomfoodBot extends BotModel {
 }
 
 export default class Handler {
-	configs: any;
-	token: any;
-	response: Response;
-	request: any;
-	bot: randomfoodBot | undefined;
+	private configs: any;
+	private token: any;
+	private response: Response;
+	private request: any;
+	private bot: randomfoodBot | undefined;
 	constructor(configs: any) {
 		this.configs = configs;
 		this.token = this.configs.token;

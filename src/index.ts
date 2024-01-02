@@ -2,12 +2,14 @@ import * as utils from "./utils";
 import Handler from "./telegram/utils";
 import mongodb from "./mongodb/init";
 import botCommands from "./telegram/command";
+import bingImgCreater from "./bing/bing@imgcreater";
 // // The Worker's environment bindings. See `wrangler.toml` file.
 interface Bindings {
 	// MongoDB Realm Application ID
 	API_MONGO_TOKEN: string;
 	API_TELEGRAM: string;
 	URL_API_MONGO: string;
+	BING_COOKIE: string;
 }
 
 // Define the Worker logic
@@ -18,6 +20,9 @@ const worker: ExportedHandler<Bindings> = {
 			apiUrl: env.URL_API_MONGO,
 			dataSource: "AtlasCluster",
 		});
+		const bingImageCT = new bingImgCreater(env.BING_COOKIE);
+
+		console.log(await bingImageCT.getImages("a pc"));
 		const url = new URL(req.url);
 		const path = url.pathname.replace(/[/]$/, "");
 		if (path !== "/api/randomfood") {
