@@ -15,14 +15,23 @@ export default class BingImageCreater {
 		method: string = "GET",
 		body: string | null = null
 	) {
+		const randomIpSegment = () => Math.floor(Math.random() * 256);
+
+		const FORWARDED_IP: string = `13.${
+			Math.floor(Math.random() * 4) + 104
+		}.${randomIpSegment()}.${randomIpSegment()}`;
+
 		const defaultOptions: any = {
 			headers: {
 				accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
 				"accept-language": "en-US,en;q=0.9",
 				"cache-control": "max-age=0",
 				"content-type": "application/x-www-form-urlencoded",
-				"sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
-				"Referrer-Policy": "origin-when-cross-origin",
+				origin: "https://www.bing.com",
+				"user-agent":
+					"Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36 Edg/120.0.0.0",
+				Referer: url,
+				"x-forwarded-for": FORWARDED_IP,
 			},
 			body: body,
 			method: method,
@@ -71,27 +80,33 @@ export default class BingImageCreater {
 	async getImages(prompt: string) {
 		console.log("Sending request...");
 		const urlEncodedPrompt = encodeURIComponent(prompt);
-
-		const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=3&FORM=GENCRE`;
-		const response = await this.makeSessionFetch(url, "POST", `q=${urlEncodedPrompt}&qs=ds`);
-
-		let redirectUrl: string = "";
-		if (response.status == 200) {
-			// console.log(response);
-			redirectUrl = response.url.replace("&nfy=1", "");
-		} else if (response.status !== 302) {
+		const error_mess = {
+			error_blocked_prompt:
+				"Your prompt has been blocked by Bing. Try to change any bad words and try again.",
+			error_being_reviewed_prompt:
+				"Your prompt is being reviewed by Bing. Try to change any sensitive words and try again.",
+			error_noresults: "Could not get results",
+			error_unsupported_lang: "\nthis language is currently not supported by bing",
+		};
+		let response: Response;
+		const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=4&FORM=GENCRE`;
+		response = await this.makeSessionFetch(url, "POST", `q=${urlEncodedPrompt}&qs=ds`);
+		if (response.status !== 302 && response.status !== 200) {
 			console.error(`ERROR: the status is ${response.status} instead of 302 or 200`);
+			const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=3&FORM=GENCRE`;
+			response = await this.makeSessionFetch(url, "POST", `q=${urlEncodedPrompt}&qs=ds`);
 			throw new Error("Redirect failed");
 		}
-
+		let redirectUrl: string = response.url.replace("&nfy=1", "");
 		const requestId = redirectUrl.split("id=")[1];
+
 		await this.makeSessionFetch(redirectUrl);
 		const pollingUrl = `${this.BING_URL}/images/create/async/results/${requestId}?q=${urlEncodedPrompt}`;
 		const startWait = Date.now();
 		let imagesResponse: Response;
 		let dataResponse: any; // Kiểu dữ liệu này cần phải được xác định dựa trên nội dung thực tế của API
 		while (true) {
-			if (Date.now() - startWait > 300000) {
+			if (Date.now() - startWait > 1000 * 60 * 5) {
 				throw new Error("Timeout error");
 			}
 			console.log(".", { end: "", flush: true });

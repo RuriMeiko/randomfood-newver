@@ -28,6 +28,7 @@ const worker: ExportedHandler<Bindings> = {
 			return utils.toError(`Unknown "${path}" URL; try "/api/randomfood" instead.`, 404);
 		}
 		const botConfig = {
+			userBot: "randomfoodruribot",
 			bingImageCT: bingImageCT,
 			database: database,
 			token: env.API_TELEGRAM,

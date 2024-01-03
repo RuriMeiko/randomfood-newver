@@ -10,12 +10,14 @@ class BotModel {
 	bingImageCT: bingImgCreater;
 	message: any;
 	database: MongoDB;
+	userBot: any;
 	constructor(config: any) {
 		this.bingImageCT = config.bingImageCT;
 		this.token = config.token;
 		this.commands = config.commands;
 		this.url = "https://api.telegram.org/bot" + this.token;
 		this.database = config.database;
+		this.userBot = config.userBot;
 	}
 	async update(request: any) {
 		try {
@@ -103,7 +105,11 @@ class BotModel {
 
 	async executeCommand(req: any) {
 		let cmdArray = this.message.text.split(" ");
-		const command = cmdArray.shift();
+		let command: string = cmdArray.shift();
+		if (command.endsWith("@" + this.userBot)) {
+			cmdArray = this.message.text.split("@");
+			command = cmdArray.shift();
+		}
 		const isCommand = Object.keys(this.commands).includes(command);
 		if (isCommand) {
 			await this.commands[command](this, req, cmdArray);
@@ -440,7 +446,10 @@ class randomfoodBot extends BotModel {
 				await this.sendMessage(err.message, this.message.chat.id);
 			}
 		} else
-			await this.sendMessage("Gửi <code>/image a cat</code> để tạo ảnh con mèo", this.message.chat.id);
+			await this.sendMessage(
+				"Gửi <code>/image a cat</code> để tạo ảnh con mèo",
+				this.message.chat.id
+			);
 	}
 }
 
@@ -459,6 +468,7 @@ export default class Handler {
 	async handle(request: any) {
 		this.request = await this.processRequest(request);
 		this.bot = new randomfoodBot({
+			userBot: this.configs.userBot,
 			bingImageCT: this.configs.bingImageCT,
 			database: this.configs.database,
 			token: this.token, // Bot Token
