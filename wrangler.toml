@@ -5,5 +5,7 @@ compatibility_date = "2023-12-31"
 main = "build/index.mjs"
 [build]
 command = "npm run build"
+[triggers]
+crons = ["* * * * *"]
 [vars]
 

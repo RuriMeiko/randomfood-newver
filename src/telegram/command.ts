@@ -10,5 +10,6 @@ const botCommands = {
 	debthelp: async (bot: any, req: any, args: any) => await bot.debthelp(req, args),
 	about: async (bot: any, req: any, args: any) => await bot.about(req, args),
 	checkdate: async (bot: any, req: any, args: any) => await bot.checkdate(req, args),
+	image: async (bot: any, req: any, args: any) => await bot.image(req, args),
 };
 export default botCommands;

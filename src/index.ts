@@ -21,14 +21,13 @@ const worker: ExportedHandler<Bindings> = {
 			dataSource: "AtlasCluster",
 		});
 		const bingImageCT = new bingImgCreater(env.BING_COOKIE);
-
-		console.log(await bingImageCT.getImages("a pc"));
 		const url = new URL(req.url);
 		const path = url.pathname.replace(/[/]$/, "");
 		if (path !== "/api/randomfood") {
 			return utils.toError(`Unknown "${path}" URL; try "/api/randomfood" instead.`, 404);
 		}
 		const botConfig = {
+			bingImageCT: bingImageCT,
 			database: database,
 			token: env.API_TELEGRAM,
 			commands: {
@@ -43,6 +42,7 @@ const worker: ExportedHandler<Bindings> = {
 				"/debthelp": botCommands.debthelp,
 				"/about": botCommands.about,
 				"/checkdate": botCommands.checkdate,
+				"/image": botCommands.image,
 			},
 		};
 		const bot = new Handler(botConfig);
@@ -53,6 +53,9 @@ const worker: ExportedHandler<Bindings> = {
 			const msg = (err as Error).message || "Error with query.";
 			return utils.toError(msg, 500);
 		}
+	},
+	async scheduled(event, env, ctx) {
+		console.log("cron processed");
 	},
 };
 

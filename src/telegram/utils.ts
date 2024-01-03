@@ -2,13 +2,16 @@ import * as utils from "../utils";
 import { supportedLanguages, type InlineKeyboard, type supportedLanguagesType } from "./data";
 import anni from "../anniversary";
 import type MongoDB from "../mongodb/init";
+import type bingImgCreater from "../bing/bing@imgcreater";
 class BotModel {
 	private token: any;
 	private commands: any;
 	private url: string;
+	bingImageCT: bingImgCreater;
 	message: any;
 	database: MongoDB;
 	constructor(config: any) {
+		this.bingImageCT = config.bingImageCT;
 		this.token = config.token;
 		this.commands = config.commands;
 		this.url = "https://api.telegram.org/bot" + this.token;
@@ -153,6 +156,7 @@ class BotModel {
 		const photos = photoUrls.map((photoUrl) => ({
 			type: "photo",
 			media: photoUrl,
+			caption: caption,
 		}));
 
 		const body = {
@@ -296,12 +300,8 @@ class randomfoodBot extends BotModel {
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtcreate(req: any, args: any) {
-		const text = this.message.text;
-		// const imgLink = await this.genimage.getImages(text.slice(11));
-		// console.log(imgLink);
-		// await this.sendMediaGroup(imgLink, this.message.chat.id, "okbro");
-		// const text = "nợ nần eo oi";
-		// await this.sendMessage(text, this.message.chat.id);
+		const text = "nợ nần eo oi";
+		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtpay(req: any, args: any) {
 		const text = "nợ nần eo oi";
@@ -429,6 +429,11 @@ class randomfoodBot extends BotModel {
 			);
 		} else await this.sendMessage("Kiếm ngiu đi mấy a zai!", this.message.chat.id);
 	}
+	async image(req: any, args: any) {
+		const text = this.message.text;
+		const imgLink = await this.bingImageCT.getImages(text.slice(7));
+		await this.sendMediaGroup(imgLink, this.message.chat.id, text.slice(7));
+	}
 }
 
 export default class Handler {
@@ -446,6 +451,7 @@ export default class Handler {
 	async handle(request: any) {
 		this.request = await this.processRequest(request);
 		this.bot = new randomfoodBot({
+			bingImageCT: this.configs.bingImageCT,
 			database: this.configs.database,
 			token: this.token, // Bot Token
 			commands: this.configs.commands, // Bot commands
