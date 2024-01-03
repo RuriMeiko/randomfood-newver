@@ -1,4 +1,4 @@
-// .wrangler/tmp/bundle-JrM5uI/checked-fetch.js
+// .wrangler/tmp/bundle-5qnWz2/checked-fetch.js
 var urls = /* @__PURE__ */ new Set();
 function checkURL(request, init) {
   const url = request instanceof URL ? request : new URL(
@@ -628,8 +628,16 @@ var randomfoodBot = class extends BotModel {
   }
   async image(req, args) {
     const text = this.message.text;
-    const imgLink = await this.bingImageCT.getImages(text.slice(7));
-    await this.sendMediaGroup(imgLink, this.message.chat.id, text.slice(7));
+    if (text.length > 6) {
+      await this.sendMessage(this.makeHtmlCode(text.slice(7), "JSON"), this.message.chat.id);
+      try {
+        const imgLink = await this.bingImageCT.getImages(text.slice(7));
+        await this.sendMediaGroup(imgLink, this.message.chat.id, text.slice(7));
+      } catch (err) {
+        await this.sendMessage(err.message, this.message.chat.id);
+      }
+    } else
+      await this.sendMessage("G\u1EEDi <code>/image a cat</code> \u0111\u1EC3 t\u1EA1o \u1EA3nh con m\xE8o", this.message.chat.id);
   }
 };
 var Handler = class {
@@ -650,8 +658,10 @@ var Handler = class {
       this.response = await this.bot.update(this.request);
     else if (this.request.method === "POST" && this.request.type.includes("application/json") && this.request.size > 6 && this.request.content.callback_query) {
       this.response = await this.bot.updateCallback(this.request);
-    } else
-      this.response = this.error(this.request.content.error);
+    } else {
+      console.log(JSON.stringify(this.request.content, null, 2));
+      this.response = toJSON("OK");
+    }
     return this.response;
   }
   error(error) {
@@ -835,24 +845,29 @@ var botCommands = {
 };
 var command_default = botCommands;
 var BingImageCreater = class {
-  constructor(authCookie) {
+  constructor(_U, SRCHHPGUSR) {
     this.sessionCookies = [];
-    this.authCookie = authCookie;
-    this.sessionCookies.push(`_U=${this.authCookie}`);
+    this._U = _U;
+    this.SRCHHPGUSR = SRCHHPGUSR;
+    this.sessionCookies.push(`_U=${this._U}`);
+    this.sessionCookies.push(`SRCHHPGUSR=${this.SRCHHPGUSR}`);
     this.BING_URL = "https://www.bing.com";
   }
-  async makeSessionFetch(url, method = "GET") {
+  async makeSessionFetch(url, method = "GET", body = null) {
+    const randomIP = `13.${Math.floor(Math.random() * 4) + 104}.${Math.floor(Math.random() * 256)}.${Math.floor(Math.random() * 256)}`;
     const defaultOptions = {
       headers: {
         accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "accept-language": "en-US,en;q=0.9",
         "cache-control": "max-age=0",
         "content-type": "application/x-www-form-urlencoded",
-        "sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
-        "Referrer-Policy": "origin-when-cross-origin"
+        referrer: "https://www.bing.com/images/create/",
+        origin: "https://www.bing.com",
+        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.63",
+        "x-forwarded-for": randomIP
       },
-      body: null,
-      method: "POST"
+      body,
+      method
     };
     if (this.sessionCookies.length > 0) {
       defaultOptions.headers = {
@@ -887,7 +902,7 @@ var BingImageCreater = class {
     console.log("Sending request...");
     const urlEncodedPrompt = encodeURIComponent(prompt);
     const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=3&FORM=GENCRE`;
-    const response = await this.makeSessionFetch(url, "POST");
+    const response = await this.makeSessionFetch(url, "POST", `q=${urlEncodedPrompt}&qs=ds`);
     let redirectUrl = "";
     if (response.status == 200) {
       redirectUrl = response.url.replace("&nfy=1", "");
@@ -955,7 +970,7 @@ var worker = {
       apiUrl: env.URL_API_MONGO,
       dataSource: "AtlasCluster"
     });
-    const bingImageCT = new BingImageCreater(env.BING_COOKIE);
+    const bingImageCT = new BingImageCreater(env._U_BING_COOKIE, env.SRCHHPGUSR_BING_COOKIE);
     const url = new URL(req.url);
     const path = url.pathname.replace(/[/]$/, "");
     if (path !== "/api/randomfood") {
@@ -985,7 +1000,7 @@ var worker = {
       return bot.handle(req);
     } catch (err) {
       const msg = err.message || "Error with query.";
-      return toError(msg, 500);
+      return toJSON(msg, 200);
     }
   },
   async scheduled(event, env, ctx) {
@@ -1029,7 +1044,7 @@ var jsonError = async (request, env, _ctx, middlewareCtx) => {
 var middleware_miniflare3_json_error_default = jsonError;
 var wrap = void 0;
 
-// .wrangler/tmp/bundle-JrM5uI/middleware-insertion-facade.js
+// .wrangler/tmp/bundle-5qnWz2/middleware-insertion-facade.js
 var envWrappers = [void 0, wrap].filter(Boolean);
 var facade = {
   ...src_default,
@@ -1042,7 +1057,7 @@ var facade = {
 };
 var middleware_insertion_facade_default = facade;
 
-// .wrangler/tmp/bundle-JrM5uI/middleware-loader.entry.ts
+// .wrangler/tmp/bundle-5qnWz2/middleware-loader.entry.ts
 var __Facade_ScheduledController__ = class {
   constructor(scheduledTime, cron, noRetry) {
     this.scheduledTime = scheduledTime;

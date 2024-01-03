@@ -431,8 +431,16 @@ class randomfoodBot extends BotModel {
 	}
 	async image(req: any, args: any) {
 		const text = this.message.text;
-		const imgLink = await this.bingImageCT.getImages(text.slice(7));
-		await this.sendMediaGroup(imgLink, this.message.chat.id, text.slice(7));
+		if (text.length > 6) {
+			await this.sendMessage(this.makeHtmlCode(text.slice(7), "JSON"), this.message.chat.id);
+			try {
+				const imgLink = await this.bingImageCT.getImages(text.slice(7));
+				await this.sendMediaGroup(imgLink, this.message.chat.id, text.slice(7));
+			} catch (err: any) {
+				await this.sendMessage(err.message, this.message.chat.id);
+			}
+		} else
+			await this.sendMessage("Gửi <code>/image a cat</code> để tạo ảnh con mèo", this.message.chat.id);
 	}
 }
 
@@ -471,7 +479,10 @@ export default class Handler {
 			this.request.content.callback_query
 		) {
 			this.response = await this.bot.updateCallback(this.request);
-		} else this.response = this.error(this.request.content.error);
+		} else {
+			console.log(JSON.stringify(this.request.content, null, 2));
+			this.response = utils.toJSON("OK");
+		}
 
 		return this.response;
 	}

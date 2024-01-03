@@ -9,7 +9,8 @@ interface Bindings {
 	API_MONGO_TOKEN: string;
 	API_TELEGRAM: string;
 	URL_API_MONGO: string;
-	BING_COOKIE: string;
+	_U_BING_COOKIE: string;
+	SRCHHPGUSR_BING_COOKIE: string;
 }
 
 // Define the Worker logic
@@ -20,7 +21,7 @@ const worker: ExportedHandler<Bindings> = {
 			apiUrl: env.URL_API_MONGO,
 			dataSource: "AtlasCluster",
 		});
-		const bingImageCT = new bingImgCreater(env.BING_COOKIE);
+		const bingImageCT = new bingImgCreater(env._U_BING_COOKIE, env.SRCHHPGUSR_BING_COOKIE);
 		const url = new URL(req.url);
 		const path = url.pathname.replace(/[/]$/, "");
 		if (path !== "/api/randomfood") {
@@ -51,7 +52,7 @@ const worker: ExportedHandler<Bindings> = {
 			return bot.handle(req);
 		} catch (err) {
 			const msg = (err as Error).message || "Error with query.";
-			return utils.toError(msg, 500);
+			return utils.toJSON(msg, 200);
 		}
 	},
 	async scheduled(event, env, ctx) {

@@ -1,24 +1,38 @@
 export default class BingImageCreater {
-	private authCookie: string;
+	private _U: string;
+	private SRCHHPGUSR: string;
 	private sessionCookies: string[] = [];
 	private BING_URL: string;
-	constructor(authCookie: string) {
-		this.authCookie = authCookie;
-		this.sessionCookies.push(`_U=${this.authCookie}`);
+	constructor(_U: string, SRCHHPGUSR: string) {
+		this._U = _U;
+		this.SRCHHPGUSR = SRCHHPGUSR;
+		this.sessionCookies.push(`_U=${this._U}`);
+		this.sessionCookies.push(`SRCHHPGUSR=${this.SRCHHPGUSR}`);
 		this.BING_URL = "https://www.bing.com";
 	}
-	private async makeSessionFetch(url: string, method: string = "GET") {
+	private async makeSessionFetch(
+		url: string,
+		method: string = "GET",
+		body: string | null = null
+	) {
+		const randomIP: string = `13.${Math.floor(Math.random() * 4) + 104}.${Math.floor(
+			Math.random() * 256
+		)}.${Math.floor(Math.random() * 256)}`;
+
 		const defaultOptions: any = {
 			headers: {
 				accept: "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
 				"accept-language": "en-US,en;q=0.9",
 				"cache-control": "max-age=0",
 				"content-type": "application/x-www-form-urlencoded",
-				"sec-ch-ua": '"Not_A Brand";v="8", "Chromium";v="120", "Microsoft Edge";v="120"',
-				"Referrer-Policy": "origin-when-cross-origin",
+				referrer: "https://www.bing.com/images/create/",
+				origin: "https://www.bing.com",
+				"user-agent":
+					"Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36 Edg/110.0.1587.63",
+				"x-forwarded-for": randomIP,
 			},
-			body: null,
-			method: "POST",
+			body: body,
+			method: method,
 		};
 
 		// Thêm cookie vào header nếu có
@@ -65,8 +79,8 @@ export default class BingImageCreater {
 		console.log("Sending request...");
 		const urlEncodedPrompt = encodeURIComponent(prompt);
 
-		const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=3&FORM=GENCRE`; // force use rt=3
-		const response = await this.makeSessionFetch(url, "POST");
+		const url = `${this.BING_URL}/images/create?q=${urlEncodedPrompt}&rt=3&FORM=GENCRE`;
+		const response = await this.makeSessionFetch(url, "POST", `q=${urlEncodedPrompt}&qs=ds`);
 
 		let redirectUrl: string = "";
 		if (response.status == 200) {
@@ -105,7 +119,6 @@ export default class BingImageCreater {
 				break;
 			}
 		}
-
 		if (dataResponse.errorMessage === "Pending") {
 			throw new Error(
 				"This prompt has been blocked by Bing. Bing's system flagged this prompt because it may conflict with their content policy. More policy violations may lead to automatic suspension of your access."
