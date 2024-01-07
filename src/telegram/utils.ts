@@ -107,12 +107,13 @@ class BotModel {
 		let cmdArray = this.message.text.split(" ");
 		let command: string = cmdArray.shift();
 		if (command.endsWith("@" + this.userBot)) {
-			cmdArray = this.message.text.split("@");
-			command = cmdArray.shift();
+			let cmdArray2 = command.split("@");
+			//@ts-ignore
+			command = cmdArray2.shift();
 		}
 		const isCommand = Object.keys(this.commands).includes(command);
 		if (isCommand) {
-			await this.commands[command](this, req, cmdArray);
+			await this.commands[command](this, req, cmdArray.join(""));
 			return true;
 		}
 		return false;
@@ -125,7 +126,6 @@ class BotModel {
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/sendMessage`;
-		const url = `${base_url}?parse_mode=${parseMode}`;
 
 		const body = {
 			chat_id: chatId,
@@ -135,7 +135,7 @@ class BotModel {
 		};
 
 		try {
-			const response: Response = await fetch(url, {
+			const response: Response = await fetch(base_url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -153,11 +153,9 @@ class BotModel {
 		photoUrls: string[],
 		chatId: number,
 		caption: string = "",
-		inlineKeyboard: InlineKeyboard | undefined = undefined,
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/sendMediaGroup`;
-		const url = base_url;
 
 		const photos = photoUrls.map((photoUrl) => ({
 			type: "photo",
@@ -170,11 +168,71 @@ class BotModel {
 			media: photos,
 			parse_mode: parseMode,
 			caption: caption,
+		};
+
+		try {
+			const response = await fetch(base_url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error sending media group:", error.message);
+			return null;
+		}
+	}
+	async sendSticker(
+		stickerId: string,
+		chatId: number,
+		replyMarkup: InlineKeyboard | undefined = undefined
+	) {
+		const base_url = `${this.url}/sendSticker`;
+
+		const body = {
+			chat_id: chatId,
+			sticker: stickerId,
+			reply_markup: replyMarkup ? { inline_keyboard: replyMarkup } : undefined,
+		};
+
+		try {
+			const response: Response = await fetch(base_url, {
+				method: "POST",
+				headers: {
+					"Content-Type": "application/json",
+				},
+				body: JSON.stringify(body),
+			}).then((resp) => resp.json());
+
+			return response;
+		} catch (error: any) {
+			console.error("Error sending sticker:", error.message);
+			return null;
+		}
+	}
+
+	async sendPhoto(
+		photoUrls: string,
+		chatId: number,
+		caption: string = "",
+		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		parseMode: string = "HTML"
+	) {
+		const base_url = `${this.url}/sendPhoto`;
+
+		const body = {
+			chat_id: chatId,
+			photo: photoUrls,
+			parse_mode: parseMode,
+			caption: caption,
 			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
 		};
 
 		try {
-			const response = await fetch(url, {
+			const response = await fetch(base_url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -198,7 +256,6 @@ class BotModel {
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/editMessageText`;
-		const url = base_url;
 
 		const body = {
 			chat_id: chatId,
@@ -209,7 +266,7 @@ class BotModel {
 		};
 
 		try {
-			const response = await fetch(url, {
+			const response = await fetch(base_url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -229,7 +286,6 @@ class BotModel {
 		showAlert: boolean = false
 	) {
 		const base_url = `${this.url}/answerCallbackQuery`;
-		const url = base_url;
 
 		const body = {
 			callback_query_id: callbackQueryId,
@@ -238,7 +294,7 @@ class BotModel {
 		};
 
 		try {
-			const response = await fetch(url, {
+			const response = await fetch(base_url, {
 				method: "POST",
 				headers: {
 					"Content-Type": "application/json",
@@ -259,69 +315,148 @@ class randomfoodBot extends BotModel {
 		super(config);
 	}
 	// bot command: /start
-	async start(req: any, args: any) {
+	async start(req: any, content: string) {
 		const text = await this.database
 			.db("randomfood")
-			.collection("creditdatabase")
+			.collection("credit")
 			.insertOne({ hi: this.message.text });
 		await this.sendMessage(
 			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
 			this.message.chat.id
 		);
 	}
-	async about(req: any, args: any) {
+	async about(req: any, content: string) {
 		const text = "Bot này tạo ra bởi <b>nthl</b> aka <b>rurimeiko</b> ヽ(✿ﾟ▽ﾟ)ノ";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async help(req: any, args: any) {
+	async help(req: any, content: string) {
 		// const text = "help mi";
-		const text = await this.database.db("randomfood").collection("creditdatabase").find();
+		const text = await this.database.db("randomfood").collection("credit").find();
 		await this.sendMessage(
 			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
 			this.message.chat.id
 		);
 	}
-	async randomfood(req: any, args: any) {
-		const text = "randomnek";
+	async randomfood(req: any, content: string) {
+		// if (this.message.from.id === 1775446945) {
+		// }
+		const today = new Date();
+		today.setUTCHours(0, 0, 0, 0);
+		const checkrandom = await this.database
+			.db("randomfood")
+			.collection("historyfood")
+			.find({
+				filter: {
+					userid: this.message.chat.id,
+					RandomAt: {
+						$gte: { $date: today.toISOString() },
+					},
+				},
+			});
 
-		const inline_keyboard: InlineKeyboard = [[{ text: "okiii ❤️", callback_data: "hiem" }]];
-		await this.sendMessage(text, this.message.chat.id, inline_keyboard);
-		console.log(
-			await this.sendMediaGroup(
-				[
-					"https://assets-global.website-files.com/6030eb20edb267a2d11d31f6/6333fc293b605c2366de60e4_TelegramLinkCoverImage_fd534fc09bd64f9ffe1770aad70e6dd5_2000.png",
-				],
-				this.message.chat.id,
-				"okbro",
-				inline_keyboard
-			)
-		);
+		if (checkrandom.documents.length == 0) {
+			await this.sendMessage(content, this.message.chat.id);
+			let subfood;
+			const mainfood = await this.database
+				.db("randomfood")
+				.collection("mainfood")
+				.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+			const inline_keyboard: InlineKeyboard = [
+				[{ text: "okiii 🤤", callback_data: `${this.message.chat.id}+randomfood` }],
+			];
+			if (!mainfood.documents[0].only) {
+				subfood = await this.database
+					.db("randomfood")
+					.collection("subfood")
+					.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+			}
+			if (!subfood) {
+				const dataInsert = {
+					userid: this.message.chat.id,
+					food: mainfood.documents[0]._id,
+					subfood: null,
+					RandomAt: {
+						$date: new Date(),
+					},
+				};
+				await this.database
+					.db("randomfood")
+					.collection("historyfood")
+					.insertOne(dataInsert);
+				return await this.sendPhoto(
+					mainfood.documents[0].img,
+					this.message.chat.id,
+					`Tớ gợi ý nấu món <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+						mainfood.documents[0].name
+					)}'>${
+						mainfood.documents[0].name
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					inline_keyboard
+				);
+			} else {
+				const dataInsert = {
+					userid: this.message.chat.id,
+					food: mainfood.documents[0]._id,
+					subfood: subfood.documents[0]._id,
+					RandomAt: {
+						$date: new Date(),
+					},
+				};
+				await this.database
+					.db("randomfood")
+					.collection("historyfood")
+					.insertOne(dataInsert);
+				return await this.sendPhoto(
+					mainfood.documents[0].img,
+					this.message.chat.id,
+					`Tớ gợi ý nấu món <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+						mainfood.documents[0].name
+					)}'>${
+						mainfood.documents[0].name
+					}</a> kết hợp với món phụ là <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+						subfood.documents[0].name
+					)}'>${
+						subfood.documents[0].name
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					inline_keyboard
+				);
+			}
+		} else {
+			await this.sendSticker(
+				"CAACAgIAAxkBAAEot_VlmvKyl62IGNoRf6p64AqordsrkAACyD8AAuCjggeYudaMoCc1bzQE",
+				this.message.chat.id
+			);
+			return await this.sendMessage(
+				"Cậu đã được gợi ý roài, tớ hong gợi ý thêm món nữa đauuu",
+				this.message.chat.id
+			);
+		}
 	}
-	async debt(req: any, args: any) {
+	async debt(req: any, content: string) {
 		const text = "hiiii";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async debthistory(req: any, args: any) {
+	async debthistory(req: any, content: string) {
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async debtcreate(req: any, args: any) {
+	async debtcreate(req: any, content: string) {
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async debtpay(req: any, args: any) {
+	async debtpay(req: any, content: string) {
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async debtdelete(req: any, args: any) {
+	async debtdelete(req: any, content: string) {
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async debthelp(req: any, args: any) {
+	async debthelp(req: any, content: string) {
 		const text = "nợ nần eo oi";
 		await this.sendMessage(text, this.message.chat.id);
 	}
-	async checkdate(req: any, args: any) {
+	async checkdate(req: any, content: string) {
 		if (this.message.from.id === 1775446945 || this.message.from.id === 6831903438) {
 			function convertMilliseconds(milliseconds: number, check: boolean = false): string {
 				if (milliseconds < 0) {
@@ -423,7 +558,7 @@ class randomfoodBot extends BotModel {
 			currentTime.setUTCHours(currentTime.getUTCHours() + 7);
 			// Tính chênh lệch thời gian giữa currentTime và anni
 			const timeDifference: number = currentTime.getTime() - anni.getTime();
-			await this.sendMessage(
+			return await this.sendMessage(
 				`${this.makeHtmlCode(
 					`#loveYouUntilTheWorldEnd {
 					time: ${convertMilliseconds(timeDifference)};
@@ -433,9 +568,9 @@ class randomfoodBot extends BotModel {
 				)}`,
 				this.message.chat.id
 			);
-		} else await this.sendMessage("Kiếm ngiu đi mấy a zai!", this.message.chat.id);
+		} else return await this.sendMessage("Kiếm ngiu đi mấy a zai!", this.message.chat.id);
 	}
-	async image(req: any, args: any) {
+	async image(req: any, content: string) {
 		const text = this.message.text;
 		if (text.length > 6) {
 			await this.sendMessage(this.makeHtmlCode(text.slice(7), "JSON"), this.message.chat.id);

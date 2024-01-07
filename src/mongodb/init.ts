@@ -49,7 +49,9 @@ export default class MongoDB {
 
 	private makeAndAssertConnectionIsValid() {
 		if (!this.dataSource || !this.currentDatabase || !this.currentCollection) {
-			throw new MongodbError("Database and collection must be set before calling this method.");
+			throw new MongodbError(
+				"Database and collection must be set before calling this method."
+			);
 		}
 
 		return {
@@ -76,7 +78,6 @@ export default class MongoDB {
 			},
 			body: JSON.stringify(body),
 		});
-
 		const status = response.status || response.statusCode || 500;
 
 		if (status === 200 || status === 201) {
@@ -115,7 +116,7 @@ export default class MongoDB {
 	 * @param {Object} parameters.pipeline - The MongoDB pipeline array.
 	 * @return {Promise<{ documents: Array<Object> }>} - The returned list of documents.
 	 */
-	aggregate = async ({ pipeline }: { pipeline: object }): Promise<{ documents: Array<object> }> =>
+	aggregate = async ({ pipeline }: { pipeline: object }): Promise<{ documents: Array<any> }> =>
 		this.request("aggregate", { pipeline });
 
 	/**
