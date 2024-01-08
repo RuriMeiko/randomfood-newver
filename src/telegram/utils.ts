@@ -122,7 +122,8 @@ class BotModel {
 	async sendMessage(
 		text: string,
 		chatId: number,
-		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		message_thread_id?: number,
+		inlineKeyboard?: InlineKeyboard,
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/sendMessage`;
@@ -134,6 +135,7 @@ class BotModel {
 			reply_markup: inlineKeyboard
 				? { inline_keyboard: inlineKeyboard }
 				: { remove_keyboard: true },
+			message_thread_id: message_thread_id,
 		};
 
 		try {
@@ -155,6 +157,7 @@ class BotModel {
 		photoUrls: string[],
 		chatId: number,
 		caption: string = "",
+		message_thread_id?: number,
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/sendMediaGroup`;
@@ -170,6 +173,7 @@ class BotModel {
 			media: photos,
 			parse_mode: parseMode,
 			caption: caption,
+			message_thread_id: message_thread_id,
 		};
 
 		try {
@@ -190,7 +194,8 @@ class BotModel {
 	async sendSticker(
 		stickerId: string,
 		chatId: number,
-		replyMarkup: InlineKeyboard | undefined = undefined
+		message_thread_id?: number,
+		replyMarkup?: InlineKeyboard
 	) {
 		const base_url = `${this.url}/sendSticker`;
 
@@ -200,6 +205,7 @@ class BotModel {
 			reply_markup: replyMarkup
 				? { inline_keyboard: replyMarkup }
 				: { remove_keyboard: true },
+			message_thread_id: message_thread_id,
 		};
 
 		try {
@@ -222,7 +228,8 @@ class BotModel {
 		photoUrls: string,
 		chatId: number,
 		caption: string = "",
-		inlineKeyboard: InlineKeyboard | undefined = undefined,
+		message_thread_id?: number,
+		inlineKeyboard?: InlineKeyboard,
 		parseMode: string = "HTML"
 	) {
 		const base_url = `${this.url}/sendPhoto`;
@@ -235,6 +242,7 @@ class BotModel {
 			reply_markup: inlineKeyboard
 				? { inline_keyboard: inlineKeyboard }
 				: { remove_keyboard: true },
+			message_thread_id: message_thread_id,
 		};
 
 		try {
@@ -348,6 +356,7 @@ class randomfoodBot extends BotModel {
 	async randomfood(req: any, content: string) {
 		// if (this.message.from.id === 1775446945) {
 		// }
+		console.log(this.message);
 		function makeHowtoUrlsearch(keyword: string) {
 			return `https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
 				keyword
@@ -380,7 +389,6 @@ class randomfoodBot extends BotModel {
 					},
 					limit: 1,
 				});
-			await this.sendMessage(content, this.message.chat.id);
 			let subfood;
 			let mainfood = await this.database
 				.db("randomfood")
@@ -421,7 +429,8 @@ class randomfoodBot extends BotModel {
 					this.message.chat.id,
 					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
 						mainfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					this.message.message_thread_id
 					// inline_keyboard
 				);
 			} else {
@@ -439,18 +448,21 @@ class randomfoodBot extends BotModel {
 						subfood.documents[0].name
 					)}'>${
 						subfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					this.message.message_thread_id
 					// inline_keyboard
 				);
 			}
 		} else {
 			await this.sendSticker(
 				"CAACAgIAAxkBAAEot_VlmvKyl62IGNoRf6p64AqordsrkAACyD8AAuCjggeYudaMoCc1bzQE",
-				this.message.chat.id
+				this.message.chat.id,
+				this.message.message_thread_id
 			);
 			return await this.sendMessage(
 				"Cậu đã được gợi ý roài, tớ hong gợi ý thêm món nữa đauuu",
-				this.message.chat.id
+				this.message.chat.id,
+				this.message.message_thread_id
 			);
 		}
 	}
