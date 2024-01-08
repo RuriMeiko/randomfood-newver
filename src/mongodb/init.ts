@@ -167,7 +167,7 @@ export default class MongoDB {
 			limit: undefined,
 			skip: undefined,
 		}
-	): Promise<{ documents: Array<object> }> =>
+	): Promise<{ documents: Array<any> }> =>
 		this.request("find", {
 			filter,
 			projection,

@@ -131,7 +131,9 @@ class BotModel {
 			chat_id: chatId,
 			text: text,
 			parse_mode: parseMode,
-			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+			reply_markup: inlineKeyboard
+				? { inline_keyboard: inlineKeyboard }
+				: { remove_keyboard: true },
 		};
 
 		try {
@@ -195,7 +197,9 @@ class BotModel {
 		const body = {
 			chat_id: chatId,
 			sticker: stickerId,
-			reply_markup: replyMarkup ? { inline_keyboard: replyMarkup } : undefined,
+			reply_markup: replyMarkup
+				? { inline_keyboard: replyMarkup }
+				: { remove_keyboard: true },
 		};
 
 		try {
@@ -228,7 +232,9 @@ class BotModel {
 			photo: photoUrls,
 			parse_mode: parseMode,
 			caption: caption,
-			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+			reply_markup: inlineKeyboard
+				? { inline_keyboard: inlineKeyboard }
+				: { remove_keyboard: true },
 		};
 
 		try {
@@ -262,7 +268,9 @@ class BotModel {
 			message_id: messageId,
 			text: text,
 			parse_mode: parseMode,
-			reply_markup: inlineKeyboard ? { inline_keyboard: inlineKeyboard } : undefined,
+			reply_markup: inlineKeyboard
+				? { inline_keyboard: inlineKeyboard }
+				: { remove_keyboard: true },
 		};
 
 		try {
@@ -340,6 +348,12 @@ class randomfoodBot extends BotModel {
 	async randomfood(req: any, content: string) {
 		// if (this.message.from.id === 1775446945) {
 		// }
+		function makeHowtoUrlsearch(keyword: string) {
+			return `https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+				keyword
+			)}`;
+		}
+
 		const today = new Date();
 		today.setUTCHours(0, 0, 0, 0);
 		const checkrandom = await this.database
@@ -353,32 +367,51 @@ class randomfoodBot extends BotModel {
 					},
 				},
 			});
-
 		if (checkrandom.documents.length == 0) {
+			const lastrandom = await this.database
+				.db("randomfood")
+				.collection("historyfood")
+				.find({
+					filter: {
+						userid: this.message.chat.id,
+					},
+					sort: {
+						RandomAt: -1,
+					},
+					limit: 1,
+				});
 			await this.sendMessage(content, this.message.chat.id);
 			let subfood;
-			const mainfood = await this.database
+			let mainfood = await this.database
 				.db("randomfood")
 				.collection("mainfood")
 				.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
-			const inline_keyboard: InlineKeyboard = [
-				[{ text: "okiii 🤤", callback_data: `${this.message.chat.id}+randomfood` }],
-			];
+			if (lastrandom.documents.length) {
+				while (mainfood.documents[0]._id == lastrandom.documents[0]._id) {
+					mainfood = await this.database
+						.db("randomfood")
+						.collection("mainfood")
+						.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+				}
+			}
+			// const inline_keyboard: InlineKeyboard = [
+			// 	[{ text: "okiii 🤤", callback_data: `${this.message.chat.id}+randomfood` }],
+			// ];
 			if (!mainfood.documents[0].only) {
 				subfood = await this.database
 					.db("randomfood")
 					.collection("subfood")
 					.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
 			}
+			const dataInsert = {
+				userid: this.message.chat.id,
+				food: mainfood.documents[0]._id,
+				subfood: null,
+				RandomAt: {
+					$date: new Date(),
+				},
+			};
 			if (!subfood) {
-				const dataInsert = {
-					userid: this.message.chat.id,
-					food: mainfood.documents[0]._id,
-					subfood: null,
-					RandomAt: {
-						$date: new Date(),
-					},
-				};
 				await this.database
 					.db("randomfood")
 					.collection("historyfood")
@@ -386,22 +419,13 @@ class randomfoodBot extends BotModel {
 				return await this.sendPhoto(
 					mainfood.documents[0].img,
 					this.message.chat.id,
-					`Tớ gợi ý nấu món <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
 						mainfood.documents[0].name
-					)}'>${
-						mainfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
-					inline_keyboard
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`
+					// inline_keyboard
 				);
 			} else {
-				const dataInsert = {
-					userid: this.message.chat.id,
-					food: mainfood.documents[0]._id,
-					subfood: subfood.documents[0]._id,
-					RandomAt: {
-						$date: new Date(),
-					},
-				};
+				dataInsert.subfood = subfood.documents[0]._id;
 				await this.database
 					.db("randomfood")
 					.collection("historyfood")
@@ -409,16 +433,14 @@ class randomfoodBot extends BotModel {
 				return await this.sendPhoto(
 					mainfood.documents[0].img,
 					this.message.chat.id,
-					`Tớ gợi ý nấu món <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
 						mainfood.documents[0].name
-					)}'>${
-						mainfood.documents[0].name
-					}</a> kết hợp với món phụ là <a href='https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+					}</a> kết hợp với món phụ là <a href='${makeHowtoUrlsearch(
 						subfood.documents[0].name
 					)}'>${
 						subfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
-					inline_keyboard
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`
+					// inline_keyboard
 				);
 			}
 		} else {
