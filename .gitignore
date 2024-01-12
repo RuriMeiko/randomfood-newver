@@ -4,6 +4,10 @@
 # Build wrangler
 build/
 
+
+# wrangler
+.wrangler/
+
 # Logs
 logs
 *.log
