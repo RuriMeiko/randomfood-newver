@@ -118,6 +118,25 @@ export default class BotModel {
 		return false;
 	}
 
+	async getMe() {
+		const base_url = `${this.url}/getMe`;
+		try {
+			const response: any = await fetch(base_url, {
+				method: "GET",
+				headers: {
+					"Content-Type": "application/json",
+				},
+			}).then((resp) => resp.json());
+			if (!response.ok) {
+				return null;
+			}
+			return response.result;
+		} catch (error: any) {
+			console.error("Error sending message:", error.message);
+			return null;
+		}
+	}
+	
 	async sendMessage(
 		text: string,
 		chatId: number,
