@@ -188,7 +188,7 @@ export default class MongoDB {
 			filter: {},
 			projection: {},
 		}
-	): Promise<{ document: object }> =>
+	): Promise<{ document: any }> =>
 		this.request("findOne", {
 			filter,
 			projection,

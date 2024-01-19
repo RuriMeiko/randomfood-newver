@@ -2,6 +2,7 @@ import * as utils from "../utils";
 import { supportedLanguages, type InlineKeyboard, type supportedLanguagesType } from "./data";
 import type MongoDB from "../mongodb/init";
 import type bingImgCreater from "../bing/bing@imgcreater";
+import callback_hanle from "./callback";
 export default class BotModel {
 	private token: any;
 	private commands: any;
@@ -71,11 +72,7 @@ export default class BotModel {
 	async updateCallback(request: any) {
 		try {
 			this.message = request.content.callback_query;
-
-			await this.sendMessage(
-				this.makeHtmlCode(JSON.stringify(this.message, null, 2), "JSON"),
-				this.message.message.chat.id
-			);
+			await callback_hanle(this);
 		} catch (error: JSON | any) {
 			console.error(error);
 			return utils.toError(error.message);

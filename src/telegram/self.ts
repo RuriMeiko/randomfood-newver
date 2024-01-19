@@ -1,5 +1,7 @@
 import BotModel from "./core";
 import anni from "../anniversary";
+import type MongoDB from "../mongodb/init";
+import type { InlineKeyboard } from "./data";
 
 export default class randomfoodBot extends BotModel {
 	constructor(config: any) {
@@ -50,7 +52,7 @@ export default class randomfoodBot extends BotModel {
 					},
 				},
 			});
-		if (checkrandom.documents.length == 0) {
+		if (!checkrandom.documents.length) {
 			const lastrandom = await this.database
 				.db("randomfood")
 				.collection("historyfood")
@@ -69,7 +71,7 @@ export default class randomfoodBot extends BotModel {
 				.collection("mainfood")
 				.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
 			if (lastrandom.documents.length) {
-				while (mainfood.documents[0]._id == lastrandom.documents[0]._id) {
+				while (mainfood.documents[0]._id === lastrandom.documents[0].food) {
 					mainfood = await this.database
 						.db("randomfood")
 						.collection("mainfood")
@@ -140,117 +142,69 @@ export default class randomfoodBot extends BotModel {
 			);
 		}
 	}
-	async randomfoodhistory(req: any, content: string) {
-		// if (this.message.from.id === 1775446945) {
-		// }
-		function makeHowtoUrlsearch(keyword: string) {
-			return `https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
-				keyword
-			)}`;
+	async randomfoodhistory(req: any) {
+		async function makeList(array: object | any, database: MongoDB, escapeHtml: Function) {
+			let content: string = "";
+
+			for await (const iterator of array) {
+				content += `\n\n${escapeHtml("*>*^*<*")}\n\n`;
+				const namefood = await database
+					.db("randomfood")
+					.collection("mainfood")
+					.findOne({
+						filter: {
+							_id: { $oid: iterator.food },
+						},
+						projection: {
+							name: 1,
+						},
+					});
+				content += `<b>Ngày random</b>: <code>${iterator.RandomAt}</code>\n<b>Món chính</b>: <code>${namefood.document.name}</code>\n`;
+				if (iterator.subfood) {
+					const subfood = await database
+						.db("randomfood")
+						.collection("subfood")
+						.findOne({
+							filter: {
+								_id: { $oid: iterator.subfood },
+							},
+							projection: {
+								name: 1,
+							},
+						});
+					content += `<b>Món phụ</b>: <code>${subfood.document.name}</code>`;
+				}
+			}
+
+			return content;
 		}
 
-		const today = new Date();
-		today.setUTCHours(0, 0, 0, 0);
 		const checkrandom = await this.database
 			.db("randomfood")
 			.collection("historyfood")
 			.find({
 				filter: {
 					userid: this.message.chat.id,
-					RandomAt: {
-						$gte: { $date: today.toISOString() },
-					},
 				},
+				sort: {
+					RandomAt: -1,
+				},
+				limit: 5,
 			});
-		if (checkrandom.documents.length == 0) {
-			const lastrandom = await this.database
-				.db("randomfood")
-				.collection("historyfood")
-				.find({
-					filter: {
-						userid: this.message.chat.id,
-					},
-					sort: {
-						RandomAt: -1,
-					},
-					limit: 1,
-				});
-			let subfood;
-			let mainfood = await this.database
-				.db("randomfood")
-				.collection("mainfood")
-				.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
-			if (lastrandom.documents.length) {
-				while (mainfood.documents[0]._id == lastrandom.documents[0]._id) {
-					mainfood = await this.database
-						.db("randomfood")
-						.collection("mainfood")
-						.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
-				}
-			}
-			// const inline_keyboard: InlineKeyboard = [
-			// 	[{ text: "okiii 🤤", callback_data: `${this.message.chat.id}+randomfood` }],
-			// ];
-			if (!mainfood.documents[0].only) {
-				subfood = await this.database
-					.db("randomfood")
-					.collection("subfood")
-					.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
-			}
-			const dataInsert = {
-				userid: this.message.chat.id,
-				food: mainfood.documents[0]._id,
-				subfood: null,
-				RandomAt: {
-					$date: new Date(),
+		const inline_keyboard: InlineKeyboard = [
+			[
+				{
+					text: `Trang 2 🚗`,
+					callback_data: `next_2`,
 				},
-			};
-			if (!subfood) {
-				await this.database
-					.db("randomfood")
-					.collection("historyfood")
-					.insertOne(dataInsert);
-				return await this.sendPhoto(
-					mainfood.documents[0].img,
-					this.message.chat.id,
-					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
-						mainfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
-					this.message.message_thread_id
-					// inline_keyboard
-				);
-			} else {
-				dataInsert.subfood = subfood.documents[0]._id;
-				await this.database
-					.db("randomfood")
-					.collection("historyfood")
-					.insertOne(dataInsert);
-				return await this.sendPhoto(
-					mainfood.documents[0].img,
-					this.message.chat.id,
-					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
-						mainfood.documents[0].name
-					}</a> kết hợp với món phụ là <a href='${makeHowtoUrlsearch(
-						subfood.documents[0].name
-					)}'>${
-						subfood.documents[0].name
-					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
-					this.message.message_thread_id
-					// inline_keyboard
-				);
-			}
-		} else {
-			await this.sendSticker(
-				"CAACAgIAAxkBAAEot_VlmvKyl62IGNoRf6p64AqordsrkAACyD8AAuCjggeYudaMoCc1bzQE",
-				this.message.chat.id,
-				this.message.message_thread_id
-			);
-			return await this.sendMessage(
-				"Cậu đã được gợi ý roài, tớ hong gợi ý thêm món nữa đauuu",
-				this.message.chat.id,
-				this.message.message_thread_id
-			);
-		}
+			],
+		];
+		await this.sendMessage(
+			await makeList(checkrandom.documents, this.database, this.escapeHtml),
+			this.message.chat.id,
+			this.message.message_thread_id,
+			inline_keyboard
+		);
 	}
 	async debt(req: any, content: string) {
 		const text = "hiiii";
