@@ -140,6 +140,118 @@ export default class randomfoodBot extends BotModel {
 			);
 		}
 	}
+	async randomfoodhistory(req: any, content: string) {
+		// if (this.message.from.id === 1775446945) {
+		// }
+		function makeHowtoUrlsearch(keyword: string) {
+			return `https://www.google.com/search?q=C%C3%A1ch%20l%C3%A0m%20${encodeURIComponent(
+				keyword
+			)}`;
+		}
+
+		const today = new Date();
+		today.setUTCHours(0, 0, 0, 0);
+		const checkrandom = await this.database
+			.db("randomfood")
+			.collection("historyfood")
+			.find({
+				filter: {
+					userid: this.message.chat.id,
+					RandomAt: {
+						$gte: { $date: today.toISOString() },
+					},
+				},
+			});
+		if (checkrandom.documents.length == 0) {
+			const lastrandom = await this.database
+				.db("randomfood")
+				.collection("historyfood")
+				.find({
+					filter: {
+						userid: this.message.chat.id,
+					},
+					sort: {
+						RandomAt: -1,
+					},
+					limit: 1,
+				});
+			let subfood;
+			let mainfood = await this.database
+				.db("randomfood")
+				.collection("mainfood")
+				.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+			if (lastrandom.documents.length) {
+				while (mainfood.documents[0]._id == lastrandom.documents[0]._id) {
+					mainfood = await this.database
+						.db("randomfood")
+						.collection("mainfood")
+						.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+				}
+			}
+			// const inline_keyboard: InlineKeyboard = [
+			// 	[{ text: "okiii 🤤", callback_data: `${this.message.chat.id}+randomfood` }],
+			// ];
+			if (!mainfood.documents[0].only) {
+				subfood = await this.database
+					.db("randomfood")
+					.collection("subfood")
+					.aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+			}
+			const dataInsert = {
+				userid: this.message.chat.id,
+				food: mainfood.documents[0]._id,
+				subfood: null,
+				RandomAt: {
+					$date: new Date(),
+				},
+			};
+			if (!subfood) {
+				await this.database
+					.db("randomfood")
+					.collection("historyfood")
+					.insertOne(dataInsert);
+				return await this.sendPhoto(
+					mainfood.documents[0].img,
+					this.message.chat.id,
+					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
+						mainfood.documents[0].name
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					this.message.message_thread_id
+					// inline_keyboard
+				);
+			} else {
+				dataInsert.subfood = subfood.documents[0]._id;
+				await this.database
+					.db("randomfood")
+					.collection("historyfood")
+					.insertOne(dataInsert);
+				return await this.sendPhoto(
+					mainfood.documents[0].img,
+					this.message.chat.id,
+					`Tớ gợi ý nấu món <a href='${makeHowtoUrlsearch(mainfood.documents[0].name)}'>${
+						mainfood.documents[0].name
+					}</a> kết hợp với món phụ là <a href='${makeHowtoUrlsearch(
+						subfood.documents[0].name
+					)}'>${
+						subfood.documents[0].name
+					}</a> thử nha 🤤\nCậu có thể thêm tuỳ biến dựa vào nhu cầu hiện tại nhé 🤭`,
+					this.message.message_thread_id
+					// inline_keyboard
+				);
+			}
+		} else {
+			await this.sendSticker(
+				"CAACAgIAAxkBAAEot_VlmvKyl62IGNoRf6p64AqordsrkAACyD8AAuCjggeYudaMoCc1bzQE",
+				this.message.chat.id,
+				this.message.message_thread_id
+			);
+			return await this.sendMessage(
+				"Cậu đã được gợi ý roài, tớ hong gợi ý thêm món nữa đauuu",
+				this.message.chat.id,
+				this.message.message_thread_id
+			);
+		}
+	}
 	async debt(req: any, content: string) {
 		const text = "hiiii";
 		await this.sendMessage(text, this.message.chat.id);

@@ -36,6 +36,7 @@ const worker: ExportedHandler<Bindings> = {
 				"/start": botCommands.start,
 				"/help": botCommands.help,
 				"/randomfood": botCommands.randomfood,
+				"/randomfoodhistory": botCommands.randomfoodhistory,
 				"/debt": botCommands.debt,
 				"/debthistory": botCommands.debthistory,
 				"/debtcreate": botCommands.debtcreate,

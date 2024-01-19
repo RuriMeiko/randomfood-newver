@@ -101,7 +101,6 @@ export default class BotModel {
 		// Tạo mã HTML với thẻ <code> và cấu trúc cho ngôn ngữ cụ thể
 		return `<pre><code class="language-${language}">${this.escapeHtml(str)}</code></pre>`;
 	}
-
 	async executeCommand(req: any) {
 		let cmdArray = this.message.text.split(" ");
 		let command: string = cmdArray.shift();
@@ -117,7 +116,6 @@ export default class BotModel {
 		}
 		return false;
 	}
-
 	async getMe() {
 		const base_url = `${this.url}/getMe`;
 		try {
@@ -136,7 +134,6 @@ export default class BotModel {
 			return null;
 		}
 	}
-	
 	async sendMessage(
 		text: string,
 		chatId: number,
@@ -241,7 +238,6 @@ export default class BotModel {
 			return null;
 		}
 	}
-
 	async sendPhoto(
 		photoUrls: string,
 		chatId: number,
@@ -278,7 +274,6 @@ export default class BotModel {
 			return null;
 		}
 	}
-
 	// Hàm edit tin nhắn tới telegram dựa vào request POST, dùng fetch để gửi
 	async editMessage(
 		text: string,

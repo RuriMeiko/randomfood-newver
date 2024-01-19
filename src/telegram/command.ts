@@ -2,6 +2,7 @@ const botCommands = {
 	start: async (bot: any, req: any, args: any) => await bot.start(req, args),
 	help: async (bot: any, req: any, args: any) => await bot.help(req, args),
 	randomfood: async (bot: any, req: any, args: any) => await bot.randomfood(req, args),
+	randomfoodhistory: async (bot: any, req: any, args: any) => await bot.randomfoodhistory(req, args),
 	debt: async (bot: any, req: any, args: any) => await bot.debt(req, args),
 	debthistory: async (bot: any, req: any, args: any) => await bot.debthistory(req, args),
 	debtcreate: async (bot: any, req: any, args: any) => await bot.debtcreate(req, args),
