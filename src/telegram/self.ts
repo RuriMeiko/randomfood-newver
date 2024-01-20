@@ -157,7 +157,7 @@ export default class randomfoodBot extends BotModel {
 		}
 		let content: string = `<b>Trang ${num + 1} 🚕</b>`;
 		async function makeList(array: object | any, database: MongoDB, escapeHtml: Function) {
-			let count = num * 5;
+			let count = num * 3;
 			for await (const iterator of array) {
 				count++;
 				const time = new Date(iterator.RandomAt);
@@ -205,11 +205,11 @@ export default class randomfoodBot extends BotModel {
 				sort: {
 					RandomAt: -1,
 				},
-				limit: 6,
-				skip: num * 5,
+				limit: 4,
+				skip: num * 3,
 			});
 		let inline_keyboard: InlineKeyboard | undefined;
-		if (checkrandom.documents.length === 6) {
+		if (checkrandom.documents.length === 4) {
 			if (num === 0)
 				inline_keyboard = [
 					[

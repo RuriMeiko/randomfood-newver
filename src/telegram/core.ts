@@ -71,10 +71,13 @@ export default class BotModel {
 					// 	console.log(this.message.reply_to_message);
 				}
 			} else {
-				if (currentcommand.document.command) {
+				if (currentcommand.document && currentcommand.document.command) {
 					switch (currentcommand.document.command) {
 						case "debtcreate":
-							await this.sendMessage("Đối phương phải được tag và gửi vào đây!", this.message.chat.id);
+							await this.sendMessage(
+								"Đối phương phải được tag và gửi vào đây!",
+								this.message.chat.id
+							);
 						default:
 							await this.sendMessage("Lỗi định dạng", this.message.chat.id);
 					}
