@@ -9,13 +9,15 @@ export default class randomfoodBot extends BotModel {
 	}
 	// bot command: /start
 	async start(req: any, content: string) {
-		const text = await this.database
-			.db("randomfood")
-			.collection("credit")
-			.insertOne({ hi: this.message.text });
-		await this.sendMessage(
-			this.makeHtmlCode(JSON.stringify(text, null, 2), "JSON"),
-			this.message.chat.id
+		const first_name: string = this.message.from.first_name;
+		const last_name: string = this.message.from.last_name ? this.message.from.last_name : "";
+		const fullName: string = last_name !== "" ? `${first_name} ${last_name}` : first_name;
+		const botinfo = await this.getMe();
+		const welcomeText = `Chào mừng <b>${fullName}</b> đến với <b>${botinfo.first_name}</b>\nBấm vào /help để xem chỉ dẫn nha 😉`;
+		return await this.sendMessage(
+			welcomeText,
+			this.message.chat.id,
+			this.message.message_thread_id
 		);
 	}
 	async about(req: any, content: string) {
@@ -153,11 +155,11 @@ export default class randomfoodBot extends BotModel {
 			chatId = this.message.message.chat.id;
 			threadId = this.message.message.message_thread_id;
 		}
-		let content: string = `<b>Trang ${num+1} 🚕</b>`;
+		let content: string = `<b>Trang ${num + 1} 🚕</b>`;
 		async function makeList(array: object | any, database: MongoDB, escapeHtml: Function) {
-			let count = num*5;
+			let count = num * 5;
 			for await (const iterator of array) {
-				count++
+				count++;
 				const time = new Date(iterator.RandomAt);
 
 				content += `\n\n${`${count}. <b>Ngày</b>: <code>${time.toLocaleString("en-US", {
@@ -265,8 +267,20 @@ export default class randomfoodBot extends BotModel {
 		await this.sendMessage(text, this.message.chat.id);
 	}
 	async debtcreate(req: any, content: string) {
-		const text = "nợ nần eo oi";
-		await this.sendMessage(text, this.message.chat.id);
+		await this.database
+					.db("randomfood")
+					.collection("command")
+					.updateOne({
+						filter: { _id: this.message.chat.id },
+						update: {
+							$set: {
+								messageId: this.message.message_id,
+								command: "debtcreate",
+							},
+						},
+						upsert: true,
+					});
+		await this.sendMessage("Tag người đối phương và gửi tớ nhé!", this.message.chat.id);
 	}
 	async debtpay(req: any, content: string) {
 		const text = "nợ nần eo oi";

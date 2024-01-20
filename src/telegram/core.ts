@@ -3,6 +3,7 @@ import { supportedLanguages, type InlineKeyboard, type supportedLanguagesType } 
 import type MongoDB from "../mongodb/init";
 import type bingImgCreater from "../bing/bing@imgcreater";
 import callback_hanle from "./callback";
+import text_hanle from "./texthanle";
 export default class BotModel {
 	[x: string]: any;
 	private token: any;
@@ -24,44 +25,60 @@ export default class BotModel {
 		try {
 			this.message = request.content.message;
 			// console.log(this.message);
+			const currentcommand = await this.database
+				.db("randomfood")
+				.collection("command")
+				.findOne({
+					filter: { _id: this.message.chat.id },
+				});
 			if (this.message.hasOwnProperty("text")) {
 				// process text
 
 				// Test command and execute
 				if (!(await this.executeCommand(request))) {
 					// Test is not a command
+
+					await text_hanle.call(this, currentcommand);
+
 					// await this.sendMessage("This is not a command", this.message.chat.id);
+
+					// } else if (this.message.hasOwnProperty("photo")) {
+					// 	// process photo
+					// 	console.log(this.message.photo);
+					// } else if (this.message.hasOwnProperty("video")) {
+					// 	// process video
+					// 	console.log(this.message.video);
+					// } else if (this.message.hasOwnProperty("animation")) {
+					// 	// process animation
+					// 	console.log(this.message.animation);
+					// } else if (this.message.hasOwnProperty("locaiton")) {
+					// 	// process locaiton
+					// 	console.log(this.message.locaiton);
+					// } else if (this.message.hasOwnProperty("poll")) {
+					// 	// process poll
+					// 	console.log(this.message.poll);
+					// } else if (this.message.hasOwnProperty("contact")) {
+					// 	// process contact
+					// 	console.log(this.message.contact);
+					// } else if (this.message.hasOwnProperty("dice")) {
+					// 	// process dice
+					// 	console.log(this.message.dice);
+					// } else if (this.message.hasOwnProperty("sticker")) {
+					// 	// process sticker
+					// 	console.log(this.message.sticker);
+					// } else if (this.message.hasOwnProperty("reply_to_message")) {
+					// 	// process reply of a message
+					// 	console.log(this.message.reply_to_message);
 				}
-			} else if (this.message.hasOwnProperty("photo")) {
-				// process photo
-				console.log(this.message.photo);
-			} else if (this.message.hasOwnProperty("video")) {
-				// process video
-				console.log(this.message.video);
-			} else if (this.message.hasOwnProperty("animation")) {
-				// process animation
-				console.log(this.message.animation);
-			} else if (this.message.hasOwnProperty("locaiton")) {
-				// process locaiton
-				console.log(this.message.locaiton);
-			} else if (this.message.hasOwnProperty("poll")) {
-				// process poll
-				console.log(this.message.poll);
-			} else if (this.message.hasOwnProperty("contact")) {
-				// process contact
-				console.log(this.message.contact);
-			} else if (this.message.hasOwnProperty("dice")) {
-				// process dice
-				console.log(this.message.dice);
-			} else if (this.message.hasOwnProperty("sticker")) {
-				// process sticker
-				console.log(this.message.sticker);
-			} else if (this.message.hasOwnProperty("reply_to_message")) {
-				// process reply of a message
-				console.log(this.message.reply_to_message);
 			} else {
-				// process unknown type
-				console.log(this.message);
+				if (currentcommand.document.command) {
+					switch (currentcommand.document.command) {
+						case "debtcreate":
+							await this.sendMessage("Đối phương phải được tag và gửi vào đây!", this.message.chat.id);
+						default:
+							await this.sendMessage("Lỗi định dạng", this.message.chat.id);
+					}
+				}
 			}
 		} catch (error: JSON | any) {
 			console.error(error);
@@ -109,6 +126,12 @@ export default class BotModel {
 		}
 		const isCommand = Object.keys(this.commands).includes(command);
 		if (isCommand) {
+			await this.database
+				.db("randomfood")
+				.collection("command")
+				.deleteOne({
+					filter: { _id: this.message.chat.id },
+				});
 			await this.commands[command](this, req, cmdArray.join(""));
 			return true;
 		}

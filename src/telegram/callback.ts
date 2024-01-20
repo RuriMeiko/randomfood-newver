@@ -4,7 +4,6 @@ import type { InlineKeyboard } from "./data";
 
 export default async function callback_hanle(this: BotModel) {
 	const data_callback = this.message.data;
-	console.log(data_callback);
 	switch (true) {
 		case /^next(_\d+)?$/.test(data_callback):
 			return await next_history.call(this);
