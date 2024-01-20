@@ -287,6 +287,21 @@ interface InlineButton {
 	text: string;
 	callback_data: string;
 }
+interface TextMentionUnit {
+	offset: number;
+	length: number;
+	type: "text_mention";
+	user: {
+		id: number;
+		is_bot: boolean;
+		first_name: string;
+		username?: string;
+		last_name?: string;
+		language_code: string;
+	};
+}
+export type TextMention = TextMentionUnit;
+
 export type InlineKeyboard = InlineButton[][];
 
 export type supportedLanguagesType =

@@ -12,5 +12,7 @@ const botCommands = {
 	about: async (bot: any, req: any, args: any) => await bot.about(req, args),
 	checkdate: async (bot: any, req: any, args: any) => await bot.checkdate(req, args),
 	image: async (bot: any, req: any, args: any) => await bot.image(req, args),
+	tagall: async (bot: any, req: any, args: any) => await bot.tagall(req, args),
+
 };
 export default botCommands;

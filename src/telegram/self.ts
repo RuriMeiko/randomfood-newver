@@ -1,7 +1,7 @@
 import BotModel from "./core";
 import anni from "../anniversary";
 import type MongoDB from "../mongodb/init";
-import type { InlineKeyboard } from "./data";
+import type { InlineKeyboard, TextMention } from "./data";
 
 export default class randomfoodBot extends BotModel {
 	constructor(config: any) {
@@ -268,18 +268,18 @@ export default class randomfoodBot extends BotModel {
 	}
 	async debtcreate(req: any, content: string) {
 		await this.database
-					.db("randomfood")
-					.collection("command")
-					.updateOne({
-						filter: { _id: this.message.chat.id },
-						update: {
-							$set: {
-								messageId: this.message.message_id,
-								command: "debtcreate",
-							},
-						},
-						upsert: true,
-					});
+			.db("randomfood")
+			.collection("command")
+			.updateOne({
+				filter: { _id: this.message.chat.id },
+				update: {
+					$set: {
+						messageId: this.message.message_id,
+						command: "debtcreate",
+					},
+				},
+				upsert: true,
+			});
 		await this.sendMessage("Tag người đối phương và gửi tớ nhé!", this.message.chat.id);
 	}
 	async debtpay(req: any, content: string) {
@@ -423,5 +423,77 @@ export default class randomfoodBot extends BotModel {
 				"Gửi <code>/image a cat</code> để tạo ảnh con mèo",
 				this.message.chat.id
 			);
+	}
+	async tagall(req: any, content?: string, listag?: any[]) {
+		const entities: TextMention[] = this.message.entities;
+		function extractTaggedUserIds(message: any) {
+			const taggedUserIds: any[] = [];
+			const text_extrax = message.text;
+			const regex = /@(\w+)/g;
+			let match;
+			while ((match = regex.exec(text_extrax))) {
+				const words = match[1].split("@");
+				if (words.includes("randomfoodruribot")) {
+					continue;
+				}
+				taggedUserIds.push({ tag: words[0] });
+			}
+			if (entities && Array.isArray(entities)) {
+				entities.forEach((entity) => {
+					if (entity.type === "text_mention") {
+						const { id, first_name, username } = entity.user;
+						let finalUsername = username
+							? { tag: username }
+							: { tag: id, subname: first_name };
+						taggedUserIds.push(finalUsername);
+					}
+				});
+				if (taggedUserIds.length) {
+					const { id, first_name, username } = message.from;
+					let finalUsername = username
+						? { tag: username }
+						: { tag: id, subname: first_name };
+
+					taggedUserIds.push(finalUsername);
+				}
+				return taggedUserIds;
+			}
+		}
+		const listtag = extractTaggedUserIds(this.message);
+		if (listtag?.length) {
+			await this.database
+				.db("randomfood")
+				.collection("tag")
+				.updateOne({
+					filter: { _id: this.message.chat.id },
+					update: {
+						$set: {
+							listtag: extractTaggedUserIds(this.message),
+						},
+					},
+					upsert: true,
+				});
+			return await this.sendMessage("Đã set tag thành công!", this.message.chat.id);
+		} else {
+			const listtag = await this.database
+				.db("randomfood")
+				.collection("tag")
+				.findOne({
+					filter: { _id: this.message.chat.id },
+				});
+			let TextMention: string = "Tất cả mọi người ơiiii!\n";
+			if (!listtag.document)
+				return await this.sendMessage(
+					"Dùng <code>/tag @user1 @user2</code> để set tag trước!",
+					this.message.chat.id
+				);
+			listtag.document.listtag.forEach((item: any) => {
+				if (item.subname)
+					TextMention += `<a href="tg://user?id=${item.tag}">${item.subname}</a>`;
+				else TextMention += `@${item.tag}`;
+				TextMention += " ";
+			});
+			return await this.sendMessage(TextMention, this.message.chat.id);
+		}
 	}
 }

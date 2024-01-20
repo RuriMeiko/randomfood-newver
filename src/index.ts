@@ -46,6 +46,7 @@ const worker: ExportedHandler<Bindings> = {
 				"/about": botCommands.about,
 				"/checkdate": botCommands.checkdate,
 				"/image": botCommands.image,
+				"/all": botCommands.tagall,
 			},
 		};
 		const bot = new Handler(botConfig);

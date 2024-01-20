@@ -78,6 +78,14 @@ export default class BotModel {
 								"Đối phương phải được tag và gửi vào đây!",
 								this.message.chat.id
 							);
+							break;
+						case "debtcreatemoney":
+							await this.sendMessage(
+								"Vui lòng gửi đúng định dạng số tiền!",
+								this.message.chat.id
+							);
+							break;
+
 						default:
 							await this.sendMessage("Lỗi định dạng", this.message.chat.id);
 					}
@@ -128,6 +136,7 @@ export default class BotModel {
 			command = cmdArray2.shift();
 		}
 		const isCommand = Object.keys(this.commands).includes(command);
+
 		if (isCommand) {
 			await this.database
 				.db("randomfood")
