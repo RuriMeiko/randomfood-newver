@@ -4,6 +4,7 @@ import type MongoDB from "../mongodb/init";
 import type bingImgCreater from "../bing/bing@imgcreater";
 import callback_hanle from "./callback";
 export default class BotModel {
+	[x: string]: any;
 	private token: any;
 	private commands: any;
 	private url: string;
@@ -72,7 +73,7 @@ export default class BotModel {
 	async updateCallback(request: any) {
 		try {
 			this.message = request.content.callback_query;
-			await callback_hanle(this);
+			await callback_hanle.call(this);
 		} catch (error: JSON | any) {
 			console.error(error);
 			return utils.toError(error.message);

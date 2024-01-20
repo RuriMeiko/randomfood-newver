@@ -142,12 +142,27 @@ export default class randomfoodBot extends BotModel {
 			);
 		}
 	}
-	async randomfoodhistory(req: any) {
+	async randomfoodhistory(req: any, num: number = 0, callback?: boolean) {
+		let chatId: number;
+		let threadId: number;
+		if (!callback) {
+			num = 0;
+			chatId = this.message.chat.id;
+			threadId = this.message.message_thread_id;
+		} else {
+			chatId = this.message.message.chat.id;
+			threadId = this.message.message.message_thread_id;
+		}
+		let content: string = `<b>Trang ${num+1} 🚕</b>`;
 		async function makeList(array: object | any, database: MongoDB, escapeHtml: Function) {
-			let content: string = "";
-
+			let count = num*5;
 			for await (const iterator of array) {
-				content += `\n\n${escapeHtml("*>*^*<*")}\n\n`;
+				count++
+				const time = new Date(iterator.RandomAt);
+
+				content += `\n\n${`${count}. <b>Ngày</b>: <code>${time.toLocaleString("en-US", {
+					timeZone: "Asia/Ho_Chi_Minh",
+				})}`}</code>\n\n`;
 				const namefood = await database
 					.db("randomfood")
 					.collection("mainfood")
@@ -159,7 +174,7 @@ export default class randomfoodBot extends BotModel {
 							name: 1,
 						},
 					});
-				content += `<b>Ngày random</b>: <code>${iterator.RandomAt}</code>\n<b>Món chính</b>: <code>${namefood.document.name}</code>\n`;
+				content += `<b>Món chính</b>: <code>${namefood.document.name}</code>`;
 				if (iterator.subfood) {
 					const subfood = await database
 						.db("randomfood")
@@ -172,37 +187,72 @@ export default class randomfoodBot extends BotModel {
 								name: 1,
 							},
 						});
-					content += `<b>Món phụ</b>: <code>${subfood.document.name}</code>`;
+					content += `\n<b>Món phụ</b>: <code>${subfood.document.name}</code>`;
 				}
 			}
 
 			return content;
 		}
-
 		const checkrandom = await this.database
 			.db("randomfood")
 			.collection("historyfood")
 			.find({
 				filter: {
-					userid: this.message.chat.id,
+					userid: chatId,
 				},
 				sort: {
 					RandomAt: -1,
 				},
-				limit: 5,
+				limit: 6,
+				skip: num * 5,
 			});
-		const inline_keyboard: InlineKeyboard = [
-			[
-				{
-					text: `Trang 2 🚗`,
-					callback_data: `next_2`,
-				},
-			],
-		];
-		await this.sendMessage(
+		let inline_keyboard: InlineKeyboard | undefined;
+		if (checkrandom.documents.length === 6) {
+			if (num === 0)
+				inline_keyboard = [
+					[
+						{
+							text: `Trang ${num + 2} 🚗`,
+							callback_data: `next_${num + 1}`,
+						},
+					],
+				];
+			else
+				inline_keyboard = [
+					[
+						{
+							text: `Trang ${num} 🚓`,
+							callback_data: `next_${num - 1}`,
+						},
+						{
+							text: `Trang ${num + 2} 🚗`,
+							callback_data: `next_${num + 1}`,
+						},
+					],
+				];
+
+			checkrandom.documents.pop();
+		} else if (num !== 0) {
+			inline_keyboard = [
+				[
+					{
+						text: `Trang ${num} 🚓`,
+						callback_data: `next_${num - 1}`,
+					},
+				],
+			];
+		}
+		if (!callback)
+			return await this.sendMessage(
+				await makeList(checkrandom.documents, this.database, this.escapeHtml),
+				chatId,
+				threadId,
+				inline_keyboard
+			);
+		return await this.editMessage(
 			await makeList(checkrandom.documents, this.database, this.escapeHtml),
-			this.message.chat.id,
-			this.message.message_thread_id,
+			chatId,
+			this.message.message.message_id,
 			inline_keyboard
 		);
 	}
