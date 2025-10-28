@@ -3,14 +3,21 @@
   "name": "randomfood",
   "scripts": {
     "build": "worktop build src/index.ts",
-    "types": "tsc --noEmit --skipLibCheck"
-  },
-  "dependencies": {
-    "wrangler": "^3.22.2"
+    "types": "tsc --noEmit --skipLibCheck",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "3.1.1",
-    "typescript": "4.4.3",
-    "worktop.build": "0.0.3"
+    "@cloudflare/workers-types": "^4.20251014.0",
+    "typescript": "^5.9.3",
+    "worktop.build": "^0.0.5",
+    "wrangler": "^4.45.1"
+  },
+  "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
+    "drizzle-kit": "^0.31.6",
+    "drizzle-orm": "^0.44.7"
   }
 }

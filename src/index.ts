@@ -1,63 +1,54 @@
-import * as utils from "./utils";
-import Handler from "./telegram/utils";
-import mongodb from "./mongodb/init";
-import botCommands from "./telegram/command";
-import bingImgCreater from "./bing/bing@imgcreater";
-// // The Worker's environment bindings. See `wrangler.toml` file.
+import * as utils from "@/utils";
+import NeonDB from "@/db/neon";
+import { RandomFoodBot } from "@/bot";
+
+// The Worker's environment bindings
 interface Bindings {
-	// MongoDB Realm Application ID
-	API_MONGO_TOKEN: string;
+	DATABASE_URL: string;
 	API_TELEGRAM: string;
-	URL_API_MONGO: string;
-	_U_BING_COOKIE: string;
-	SRCHHPGUSR_BING_COOKIE: string;
 }
 
 // Define the Worker logic
 const worker: ExportedHandler<Bindings> = {
 	async fetch(req, env) {
-		const database = new mongodb({
-			apiKey: env.API_MONGO_TOKEN,
-			apiUrl: env.URL_API_MONGO,
-			dataSource: "AtlasCluster",
+		// Initialize database
+		const database = new NeonDB({
+			connectionString: env.DATABASE_URL,
 		});
-		const bingImageCT = new bingImgCreater(env._U_BING_COOKIE, env.SRCHHPGUSR_BING_COOKIE);
+
+		// Initialize bot
+		const bot = new RandomFoodBot({
+			token: env.API_TELEGRAM,
+			userBot: "randomfoodruribot",
+			database: database,
+		});
+
+		// Parse request
 		const url = new URL(req.url);
 		const path = url.pathname.replace(/[/]$/, "");
+		
 		if (path !== "/api/randomfood") {
 			return utils.toError(`Unknown "${path}" URL; try "/api/randomfood" instead.`, 404);
 		}
-		const botConfig = {
-			userBot: "randomfoodruribot",
-			bingImageCT: bingImageCT,
-			database: database,
-			token: env.API_TELEGRAM,
-			commands: {
-				"/start": botCommands.start,
-				"/help": botCommands.help,
-				"/randomfood": botCommands.randomfood,
-				"/randomfoodhistory": botCommands.randomfoodhistory,
-				"/debt": botCommands.debt,
-				"/debthistory": botCommands.debthistory,
-				"/debtcreate": botCommands.debtcreate,
-				"/debtpay": botCommands.debtpay,
-				"/debtdelete": botCommands.debtdelete,
-				"/debthelp": botCommands.debthelp,
-				"/about": botCommands.about,
-				"/checkdate": botCommands.checkdate,
-				"/image": botCommands.image,
-				"/all": botCommands.tagall,
-			},
-		};
-		const bot = new Handler(botConfig);
 
 		try {
-			return bot.handle(req);
+			const content = await req.json() as any;
+			const request = { content };
+			
+			// Handle different types of updates
+			if (content.message) {
+				return await bot.handleMessage(request);
+			} else if (content.callback_query) {
+				return await bot.handleCallback(request);
+			} else {
+				return utils.toJSON("OK");
+			}
 		} catch (err) {
 			const msg = (err as Error).message || "Error with query.";
 			return utils.toJSON(msg, 200);
 		}
 	},
+
 	async scheduled(event, env, ctx) {
 		console.log("cron processed");
 	},

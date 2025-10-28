@@ -15,7 +15,16 @@
 		"isolatedModules": false,
 		"noImplicitThis": true,
 		"noImplicitAny": true,
-		"module": "es2020"
+		"module": "es2020",
+		"baseUrl": ".",
+		"paths": {
+			"@/*": ["src/*"],
+			"@/bot/*": ["src/bot/*"],
+			"@/commands/*": ["src/commands/*"],
+			"@/services/*": ["src/services/*"],
+			"@/telegram/*": ["src/telegram/*"],
+			"@/db/*": ["src/db/*"]
+		}
 	},
 	"include": ["@types", "src"]
 }
