@@ -6,6 +6,7 @@ import { createFoodCommands } from '@/commands/food';
 import { createSocialCommands } from '@/commands/social';
 import type NeonDB from '@/db/neon';
 import * as utils from '@/utils';
+import { log, LogLevel, logger } from '@/utils/logger';
 
 export class RandomFoodBot {
   private telegramClient: TelegramClient;
@@ -18,6 +19,11 @@ export class RandomFoodBot {
     this.commandRegistry = new BotCommandRegistry();
     this.database = config.database;
     this.userBot = config.userBot;
+    
+    // Setup logging
+    logger.setContext('RandomFoodBot');
+    logger.setLogLevel(LogLevel.INFO);
+    log.info('Bot initialized', { userBot: this.userBot });
     
     this.registerCommands();
   }
@@ -40,6 +46,13 @@ export class RandomFoodBot {
     try {
       const message: Message = request.content.message;
       
+      log.info('Received message', {
+        chatId: message.chat.id,
+        userId: message.from?.id,
+        hasText: !!message.text,
+        messageId: message.message_id
+      });
+      
       if (message.text) {
         const context: BotContext = {
           chatId: message.chat.id.toString(),
@@ -52,9 +65,13 @@ export class RandomFoodBot {
         await this.processTextMessage(message, context);
       }
       
+      log.debug('Message handled successfully');
       return utils.toJSON('OK');
     } catch (error: any) {
-      console.error('Error handling message:', error);
+      log.error('Error handling message', error, {
+        messageId: request.content?.message?.message_id,
+        chatId: request.content?.message?.chat?.id
+      });
       return utils.toError(error.message);
     }
   }
@@ -62,6 +79,13 @@ export class RandomFoodBot {
   async handleCallback(request: any): Promise<Response> {
     try {
       const callbackQuery: CallbackQuery = request.content.callback_query;
+      
+      log.info('Received callback query', {
+        callbackId: callbackQuery.id,
+        data: callbackQuery.data,
+        chatId: callbackQuery.message.chat.id,
+        messageId: callbackQuery.message.message_id
+      });
       
       const context: BotContext = {
         chatId: callbackQuery.message.chat.id.toString(),
@@ -74,14 +98,19 @@ export class RandomFoodBot {
       await this.processCallback(callbackQuery, context);
       await this.telegramClient.answerCallbackQuery(callbackQuery.id);
       
+      log.debug('Callback handled successfully');
       return utils.toJSON('OK');
     } catch (error: any) {
-      console.error('Error handling callback:', error);
+      log.error('Error handling callback', error, {
+        callbackId: request.content?.callback_query?.id,
+        data: request.content?.callback_query?.data
+      });
       return utils.toError(error.message);
     }
   }
 
   private async processTextMessage(message: Message, context: BotContext): Promise<void> {
+    const startTime = Date.now();
     let command = this.extractCommand(message.text!);
     const args = this.extractArgs(message.text!, command);
     
@@ -90,15 +119,46 @@ export class RandomFoodBot {
       command = command.replace(`@${this.userBot}`, '');
     }
 
+    log.debug('Processing text message', {
+      command,
+      args: args.substring(0, 100), // Limit args length for logging
+      chatId: context.chatId,
+      userId: context.userId
+    });
+
     const commandHandler = this.commandRegistry.get(command);
     
     if (commandHandler) {
-      // Clear any pending command state
-      await this.clearCommandState(context.chatId);
-      
-      // Execute command
-      await commandHandler.execute(context, args, this.telegramClient);
+      try {
+        // Clear any pending command state
+        await this.clearCommandState(context.chatId);
+        
+        log.info(`Executing command: ${command}`, {
+          userId: context.userId,
+          chatId: context.chatId
+        });
+        
+        // Execute command
+        await commandHandler.execute(context, args, this.telegramClient);
+        
+        const duration = Date.now() - startTime;
+        log.command.executed(command, context.userId, true, duration);
+        
+      } catch (error: any) {
+        const duration = Date.now() - startTime;
+        log.command.executed(command, context.userId, false, duration);
+        log.error(`Command execution failed: ${command}`, error, {
+          userId: context.userId,
+          chatId: context.chatId,
+          args
+        });
+        throw error; // Re-throw to be handled by parent
+      }
     } else {
+      log.debug('Non-command text received', {
+        text: message.text?.substring(0, 50),
+        userId: context.userId
+      });
       // Handle non-command text (if needed)
       await this.handleNonCommandText(message, context);
     }
@@ -129,10 +189,12 @@ export class RandomFoodBot {
 
   private async clearCommandState(chatId: string): Promise<void> {
     try {
+      log.db.query('deleteOne', 'command', { chatId });
       await this.database
         .collection('command')
         .deleteOne({ filter: { id: chatId } });
-    } catch (error) {
+    } catch (error: any) {
+      log.db.error('deleteOne', 'command', error, { chatId });
       // Ignore errors when clearing command state
     }
   }

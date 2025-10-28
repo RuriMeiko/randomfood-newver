@@ -1,4 +1,5 @@
 import type { TelegramBot } from '@/bot/types';
+import { log } from '@/utils/logger';
 
 export class TelegramClient implements TelegramBot {
   private baseUrl: string;
@@ -24,15 +25,20 @@ export class TelegramClient implements TelegramBot {
     };
 
     try {
+      log.api.call('POST', `${this.baseUrl}/sendMessage`, { chatId, textLength: text.length });
+      
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      return await response.json();
+      const result = await response.json() as any;
+      log.api.response('POST', '/sendMessage', response.status, { chatId, success: result.ok });
+      
+      return result;
     } catch (error: any) {
-      console.error('Error sending message:', error.message);
+      log.error('Error sending message', error, { chatId, textLength: text.length });
       return null;
     }
   }

@@ -1,15 +1,24 @@
 import type NeonDB from '@/db/neon';
 import type { FoodItem, HistoryItem } from '@/commands/types';
+import { log } from '@/utils/logger';
 
 export class FoodService {
   constructor(private db: NeonDB) {}
 
   async getRandomFood(): Promise<FoodItem> {
-    const result = await this.db
-      .collection('mainfood')
-      .aggregate({ pipeline: [{ $sample: { size: 1 } }] });
-    
-    return result.documents[0];
+    try {
+      log.db.query('aggregate', 'mainfood', { operation: 'random_sample' });
+      
+      const result = await this.db
+        .collection('mainfood')
+        .aggregate({ pipeline: [{ $sample: { size: 1 } }] });
+      
+      log.debug('Random food selected', { foodId: result.documents[0]?.id, foodName: result.documents[0]?.name });
+      return result.documents[0];
+    } catch (error: any) {
+      log.db.error('aggregate', 'mainfood', error);
+      throw error;
+    }
   }
 
   async getRandomSubFood(): Promise<FoodItem> {
@@ -37,19 +46,29 @@ export class FoodService {
   }
 
   async hasRandomizedToday(userId: string): Promise<boolean> {
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
-    
-    const result = await this.db
-      .collection('historyfood')
-      .find({
-        filter: {
-          userid: userId,
-          randomAt: { $gte: today }
-        }
-      });
-    
-    return result.documents.length > 0;
+    try {
+      const today = new Date();
+      today.setUTCHours(0, 0, 0, 0);
+      
+      log.db.query('find', 'historyfood', { userId, operation: 'check_today' });
+      
+      const result = await this.db
+        .collection('historyfood')
+        .find({
+          filter: {
+            userid: userId,
+            randomAt: { $gte: today }
+          }
+        });
+      
+      const hasRandomized = result.documents.length > 0;
+      log.debug('Checked daily randomization status', { userId, hasRandomized });
+      
+      return hasRandomized;
+    } catch (error: any) {
+      log.db.error('find', 'historyfood', error, { userId });
+      throw error;
+    }
   }
 
   async getLastRandomFood(userId: string): Promise<HistoryItem | null> {
@@ -65,14 +84,24 @@ export class FoodService {
   }
 
   async saveRandomHistory(userId: string, foodId: number, subFoodId?: number): Promise<void> {
-    const historyData = {
-      userid: userId,
-      food: foodId,
-      subfood: subFoodId || null,
-      randomAt: new Date()
-    };
+    try {
+      const historyData = {
+        userid: userId,
+        food: foodId,
+        subfood: subFoodId || null,
+        randomAt: new Date()
+      };
 
-    await this.db.collection('historyfood').insertOne(historyData);
+      log.db.query('insertOne', 'historyfood', { userId, foodId, subFoodId });
+      log.user.action('food_randomized', userId, { foodId, subFoodId });
+      
+      await this.db.collection('historyfood').insertOne(historyData);
+      
+      log.info('Food history saved', { userId, foodId, subFoodId });
+    } catch (error: any) {
+      log.db.error('insertOne', 'historyfood', error, { userId, foodId, subFoodId });
+      throw error;
+    }
   }
 
   async getFoodHistory(userId: string, limit: number = 10, offset: number = 0): Promise<HistoryItem[]> {
