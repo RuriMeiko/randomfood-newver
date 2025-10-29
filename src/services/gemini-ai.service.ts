@@ -5,11 +5,15 @@ import { ConversationContextService } from './conversation-context.service';
 export interface GeminiAIResponse {
   actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'error';
   response: string;
+  messageBreakdown?: {
+    shouldSplit: boolean;
+    messages: string[];
+  };
   data?: {
     // For food suggestions
     foodName?: string;
     description?: string;
-    questions?: string[];
+    ingredients?: string[];
     
     // For debt tracking
     debtorUsername?: string;
@@ -18,9 +22,6 @@ export interface GeminiAIResponse {
     currency?: string;
     description?: string;
     action?: 'create' | 'pay' | 'list' | 'check';
-    
-    // For conversation
-    conversationResponse?: string;
   };
   success: boolean;
   error?: string;
@@ -191,23 +192,37 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
 
         const aiResponse = JSON.parse(jsonMatch[0]);
         
+        // Validate that we have the required response field
+        if (!aiResponse.response) {
+          log.error('No response field in AI JSON', undefined, { aiResponse, processingTime });
+          return {
+            actionType: 'conversation',
+            response: aiResponseText,
+            data: { conversationResponse: aiResponseText },
+            success: true
+          };
+        }
+
         log.info('Gemini AI response processed successfully', { 
           actionType: aiResponse.actionType,
           responseLength: aiResponse.response?.length || 0,
           processingTime,
           userId,
           chatId,
-          contextUsed: allMessages.length > 0
+          hasContext: !!contextString
         });
 
+        // Return the parsed response with proper structure
         return {
-          ...aiResponse,
+          actionType: aiResponse.actionType || 'conversation',
+          response: aiResponse.response, // This is the clean text response
+          data: aiResponse.data || {},
           success: true
         };
 
       } catch (parseError: any) {
         log.error('Error parsing AI JSON response', parseError, { 
-          aiResponseText,
+          aiResponseText: aiResponseText.substring(0, 200),
           processingTime 
         });
         

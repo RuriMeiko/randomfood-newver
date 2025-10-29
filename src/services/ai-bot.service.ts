@@ -115,13 +115,12 @@ export class AIBotService {
           break;
       }
 
-      // Log context usage stats periodically
-      if (Math.random() < 0.1) { // 10% chance
-        const stats = await this.conversationContext.getContextStats(chatId, userId);
-        log.info('Context usage stats', { 
-          chatId, userId, 
-          ...stats,
-          statusCheck: context.contextStatus
+      // Skip context stats for now to avoid DB errors
+      if (Math.random() < 0.05) { // 5% chance, simplified logging
+        log.info('Context usage check', { 
+          chatId, userId,
+          contextStatus: context?.contextStatus || 'unknown',
+          messageCount: context?.messages?.length || 0
         });
       }
 
@@ -153,28 +152,28 @@ export class AIBotService {
     aiResponse: GeminiAIResponse
   ): Promise<void> {
     try {
-      const newSuggestion: NewFoodSuggestion = {
-        userId,
-        chatId,
-        username: username || null,
-        suggestion: aiResponse.data?.foodName || aiResponse.response,
-        prompt: userMessage,
-        aiResponse: JSON.stringify(aiResponse),
-      };
-
+      // Use the old table structure that works
       await this.database.query(
         'INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, ai_response) VALUES ($1, $2, $3, $4, $5, $6)',
-        [userId, chatId, username || null, newSuggestion.suggestion, userMessage, newSuggestion.aiResponse]
+        [
+          userId, 
+          chatId, 
+          username || null, 
+          aiResponse.data?.foodName || aiResponse.response || 'Food suggestion',
+          userMessage,
+          JSON.stringify(aiResponse)
+        ]
       );
 
       log.user.action('ai_food_suggested', userId, { 
         chatId,
         foodName: aiResponse.data?.foodName,
-        hasQuestions: aiResponse.data?.questions?.length || 0
+        ingredients: aiResponse.data?.ingredients?.length || 0
       });
 
     } catch (error: any) {
       log.error('Error saving food suggestion', error, { userId, chatId });
+      // Don't throw - food suggestion failure shouldn't break the main flow
     }
   }
 

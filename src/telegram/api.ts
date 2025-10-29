@@ -148,7 +148,31 @@ export default class TelegramApi {
       ...params,
       parse_mode: params.parse_mode || 'HTML',
     };
+    
+    // Clean HTML entities in text to prevent parsing errors
+    if (messageParams.text) {
+      messageParams.text = this.cleanHtmlEntities(messageParams.text);
+    }
+    
     return this.makeRequest('sendMessage', messageParams);
+  }
+
+  /**
+   * Clean HTML entities and fix malformed tags
+   */
+  private cleanHtmlEntities(text: string): string {
+    // Remove or escape problematic characters that can break HTML parsing
+    return text
+      .replace(/</g, '&lt;')  // Escape < that might be part of emoticons
+      .replace(/>/g, '&gt;')  // Escape > that might be part of emoticons  
+      .replace(/&lt;b&gt;/g, '<b>')    // Restore valid HTML tags
+      .replace(/&lt;\/b&gt;/g, '</b>')
+      .replace(/&lt;i&gt;/g, '<i>')
+      .replace(/&lt;\/i&gt;/g, '</i>')
+      .replace(/&lt;code&gt;/g, '<code>')
+      .replace(/&lt;\/code&gt;/g, '</code>')
+      .replace(/&lt;pre&gt;/g, '<pre>')
+      .replace(/&lt;\/pre&gt;/g, '</pre>');
   }
 
   /**

@@ -80,10 +80,11 @@ export class TelegramExecutionContext {
       return { ok: false, error: 'No chat_id available' };
     }
 
+    // Use plain text mode to avoid HTML parsing issues
     return this.api.sendMessage({
       chat_id: this.chat_id,
       text,
-      parse_mode: options.parse_mode || 'HTML',
+      parse_mode: undefined, // Use plain text mode to avoid HTML parsing errors
       reply_markup: options.reply_markup,
       message_thread_id: options.message_thread_id,
       disable_web_page_preview: options.disable_web_page_preview,

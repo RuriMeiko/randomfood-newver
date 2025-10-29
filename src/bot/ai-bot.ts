@@ -77,10 +77,39 @@ export class AIFoodDebtBot {
               const processingTime = Date.now() - startTime;
               
               if (result.success) {
-                // Send natural response without emojis or processing indicators
-                await ctx.sendMessage(result.response);
+                // Check if we should split the message
+                if (result.messageBreakdown?.shouldSplit && result.messageBreakdown.messages.length > 1) {
+                  log.debug('Sending split messages', {
+                    userId, chatId,
+                    messageCount: result.messageBreakdown.messages.length,
+                    actionType: result.actionType
+                  });
+
+                  // Send messages with realistic delays
+                  for (let i = 0; i < result.messageBreakdown.messages.length; i++) {
+                    const message = result.messageBreakdown.messages[i];
+                    
+                    // Show typing for each message
+                    await ctx.sendTypingAction();
+                    
+                    // Random delay between messages (1-3 seconds) to simulate human typing
+                    const delay = Math.random() * 2000 + 1000;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    
+                    await ctx.sendMessage(message);
+                  }
+                } else {
+                  // Send as single message
+                  log.debug('Sending single message', {
+                    userId, chatId,
+                    actionType: result.actionType,
+                    responseLength: result.response?.length || 0
+                  });
+
+                  await ctx.sendMessage(result.response || 'uh, tui k hiểu bà nói gì');
+                }
               } else {
-                await ctx.sendMessage(result.response);
+                await ctx.sendMessage(result.response || 'lỗi r bà ơi, thử lại đi');
               }
 
               log.user.action('ai_message_processed', userId, {
