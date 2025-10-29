@@ -303,9 +303,24 @@ export default class NeonDB {
 	 */
 	async query(sqlString: string, params: any[] = []): Promise<any[]> {
 		try {
-			// Use neon client directly for parameterized queries
-			const results = await this.neonClient(sqlString, params);
-			return results;
+			// Use neon client with sql tagged template function
+			const { neon } = await import('@neondatabase/serverless');
+			const sql = neon(this.database.connectionString || process.env.DATABASE_URL || '');
+			
+			// Use tagged template literal syntax
+			if (params.length === 0) {
+				const results = await sql`${sqlString}`;
+				return results;
+			} else {
+				// For parameterized queries, we need to construct the query differently
+				// Convert to neon's expected format
+				let query = sqlString;
+				params.forEach((param, index) => {
+					query = query.replace(`$${index + 1}`, `'${param}'`);
+				});
+				const results = await sql`${query}`;
+				return results;
+			}
 		} catch (error: any) {
 			throw new NeonError({ error: `Failed to execute query: ${error.message}` });
 		}
