@@ -31,13 +31,13 @@ Let's start with /randomfood! 🎲`;
       description: 'Show available commands',
       async execute(ctx: TelegramExecutionContext, args: string[]) {
         try {
-          // Get help data from database
-          const helpData = await database.find('credit', {});
+          // Get help data from database (stored in credit table as JSON)
+          const helpData = await database.query('SELECT * FROM credit WHERE data->>\'type\' = \'help\' LIMIT 1');
           
           let helpText = '📋 <b>Available Commands:</b>\n\n';
           
-          if (helpData.length > 0 && helpData[0].data) {
-            helpText += helpData[0].data;
+          if (helpData.length > 0 && helpData[0].data && helpData[0].data.content) {
+            helpText += helpData[0].data.content;
           } else {
             // Fallback help text
             helpText += `🍽️ <b>Food Commands:</b>
@@ -68,7 +68,17 @@ Let's start with /randomfood! 🎲`;
       name: 'about',
       description: 'About this bot',
       async execute(ctx: TelegramExecutionContext, args: string[]) {
-        const aboutText = `🤖 <b>Random Food Bot</b>
+        try {
+          // Get about data from database (stored in credit table as JSON)
+          const aboutData = await database.query('SELECT * FROM credit WHERE data->>\'type\' = \'about\' LIMIT 1');
+          
+          let aboutText: string;
+          
+          if (aboutData.length > 0 && aboutData[0].data && aboutData[0].data.content) {
+            aboutText = aboutData[0].data.content;
+          } else {
+            // Fallback about text if no data in database
+            aboutText = `🤖 <b>Random Food Bot</b>
 
 🎯 <b>Purpose:</b> Help you decide what to eat when you're indecisive!
 
@@ -89,9 +99,14 @@ Let's start with /randomfood! 🎲`;
 📝 <b>Developer:</b> Built with ❤️ for food lovers
 
 🚀 Use /randomfood to get started!`;
+          }
 
-        log.user.action('about_viewed', ctx.user_id?.toString() || '');
-        await ctx.sendMessage(aboutText);
+          log.user.action('about_viewed', ctx.user_id?.toString() || '');
+          await ctx.sendMessage(aboutText);
+        } catch (error: any) {
+          log.error('Error fetching about data', error, { userId: ctx.user_id });
+          await ctx.sendMessage('❌ Error loading about information. Please try again later.');
+        }
       }
     }
   ];

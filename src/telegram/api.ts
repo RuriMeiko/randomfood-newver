@@ -64,6 +64,26 @@ export default class TelegramApi {
   constructor(token: string) {
     this.botToken = token;
     this.baseUrl = `https://api.telegram.org/bot${token}`;
+    
+    // Validate token format
+    if (!token || typeof token !== 'string') {
+      log.error('Invalid bot token: Token is empty or not a string', undefined, { 
+        tokenType: typeof token,
+        tokenLength: token?.length || 0 
+      });
+    } else if (!token.includes(':')) {
+      log.error('Invalid bot token format: Missing colon separator', undefined, { 
+        tokenStart: token.substring(0, 10) + '...',
+        tokenLength: token.length 
+      });
+    } else {
+      log.info('Bot token validated', { 
+        tokenStart: token.substring(0, 10) + '...',
+        hasColon: token.includes(':'),
+        tokenLength: token.length,
+        baseUrl: this.baseUrl.substring(0, 50) + '...'
+      });
+    }
   }
 
   /**
@@ -175,7 +195,41 @@ export default class TelegramApi {
    * Get bot information
    */
   async getMe(): Promise<any> {
-    return this.makeRequest('getMe', {});
+    const url = `${this.baseUrl}/getMe`;
+    
+    try {
+      log.debug('Testing bot token with getMe', { 
+        url: url.substring(0, 50) + '...',
+        tokenValid: this.botToken.includes(':')
+      });
+
+      const response = await fetch(url, { method: 'GET' });
+      const result = await response.json() as any;
+
+      if (!response.ok || !result.ok) {
+        log.error('Bot token validation failed', undefined, {
+          status: response.status,
+          statusText: response.statusText,
+          errorCode: result.error_code,
+          description: result.description,
+          url: url.substring(0, 50) + '...'
+        });
+      } else {
+        log.info('Bot token validated successfully', { 
+          botUsername: result.result?.username,
+          botId: result.result?.id,
+          botName: result.result?.first_name
+        });
+      }
+
+      return result;
+    } catch (error: any) {
+      log.error('Network error during bot validation', error, {
+        url: url.substring(0, 50) + '...',
+        errorMessage: error.message
+      });
+      return { ok: false, error: error.message };
+    }
   }
 
   /**
@@ -185,6 +239,16 @@ export default class TelegramApi {
     return this.makeRequest('deleteMessage', {
       chat_id: chatId,
       message_id: messageId,
+    });
+  }
+
+  /**
+   * Send typing action to show bot is processing
+   */
+  async sendChatAction(chatId: string | number, action: string = 'typing'): Promise<any> {
+    return this.makeRequest('sendChatAction', {
+      chat_id: chatId,
+      action: action, // 'typing', 'upload_photo', 'record_video', etc.
     });
   }
 }

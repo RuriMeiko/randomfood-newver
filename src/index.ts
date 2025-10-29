@@ -2,12 +2,15 @@ import * as utils from "@/utils";
 import NeonDB from "@/db/neon";
 import { RandomFoodBot } from "@/bot";
 import { ModernRandomFoodBot } from "@/bot/modern-bot";
+import { SimpleFoodBot } from "@/bot/simple-bot";
+import { AIFoodDebtBot } from "@/bot/ai-bot";
 import { log, LogLevel, logger } from "@/utils/logger";
 
 // The Worker's environment bindings
 interface Bindings {
 	DATABASE_URL: string;
 	API_TELEGRAM: string;
+	GEMINI_API_KEY: string;
 }
 
 // Define the Worker logic
@@ -28,17 +31,11 @@ const worker: ExportedHandler<Bindings> = {
 			connectionString: env.DATABASE_URL,
 		});
 
-		// Initialize modern bot
-		const modernBot = new ModernRandomFoodBot({
+		// Initialize AI Food & Debt Bot with Gemini 2.0 Flash
+		const aiBot = new AIFoodDebtBot({
 			database: database,
 			telegramToken: env.API_TELEGRAM,
-		});
-
-		// Keep legacy bot for fallback if needed
-		const legacyBot = new RandomFoodBot({
-			token: env.API_TELEGRAM,
-			userBot: "randomfoodruribot", 
-			database: database,
+			geminiApiKey: env.GEMINI_API_KEY,
 		});
 
 		// Parse request
@@ -61,8 +58,8 @@ const worker: ExportedHandler<Bindings> = {
 				callbackData: update.callback_query?.data
 			});
 			
-			// Use modern bot for handling updates
-			return await modernBot.handleUpdate(update);
+			// Use AI bot for handling updates
+			return await aiBot.handleUpdate(update);
 		} catch (err) {
 			const error = err as Error;
 			log.error('Worker error', error, { 

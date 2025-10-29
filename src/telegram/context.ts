@@ -201,6 +201,18 @@ export class TelegramExecutionContext {
   }
 
   /**
+   * Send typing action to show bot is processing
+   */
+  async sendTypingAction(): Promise<any> {
+    if (!this.chat_id) {
+      log.error('Cannot send typing action: chat_id not available in context', undefined, { update_type: this.update_type });
+      return { ok: false, error: 'No chat_id available' };
+    }
+
+    return this.api.sendChatAction(this.chat_id, 'typing');
+  }
+
+  /**
    * Get command and arguments from message text
    */
   getCommand(): { command: string; args: string[] } {

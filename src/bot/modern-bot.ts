@@ -4,6 +4,8 @@ import { ModernTelegramBot } from '@/telegram/modern-client';
 import { createModernBasicCommands } from '@/commands/modern/basic';
 import { createModernFoodCommands } from '@/commands/modern/food';
 import { createModernSocialCommands, handleHistoryCallback } from '@/commands/modern/social';
+import { createModernDebugCommands } from '@/commands/modern/debug';
+import { TelegramValidator } from '@/utils/telegram-validator';
 import { log } from '@/utils/logger';
 
 export class ModernRandomFoodBot {
@@ -13,15 +15,54 @@ export class ModernRandomFoodBot {
 
   constructor(config: BotConfig) {
     this.database = config.database;
-    this.token = config.token;
-    this.modernBot = new ModernTelegramBot(config.token);
+    this.token = config.telegramToken || config.token;
+    this.modernBot = new ModernTelegramBot(this.token);
+
+    // Validate token on initialization
+    this.validateToken();
 
     // Register all modern commands
     this.registerModernCommands();
     
     log.info('Modern RandomFoodBot initialized', { 
-      commandCount: this.modernBot.getCommands().length 
+      commandCount: this.modernBot.getCommands().length,
+      tokenLength: this.token?.length || 0
     });
+  }
+
+  /**
+   * Validate bot token
+   */
+  private async validateToken(): Promise<void> {
+    try {
+      if (!this.token) {
+        log.error('Bot token is missing!', undefined, { tokenProvided: false });
+        return;
+      }
+
+      // Format validation
+      const formatValid = TelegramValidator.validateTokenFormat(this.token);
+      
+      if (formatValid) {
+        // API validation (async, don't block initialization)
+        TelegramValidator.testBotToken(this.token).then(result => {
+          if (result.valid) {
+            log.info('✅ Bot token validation successful', { 
+              botUsername: result.botInfo?.username,
+              botId: result.botInfo?.id
+            });
+          } else {
+            log.error('❌ Bot token API test failed', undefined, { 
+              error: result.error 
+            });
+          }
+        }).catch(error => {
+          log.error('Token validation error', error);
+        });
+      }
+    } catch (error: any) {
+      log.error('Error during token validation', error);
+    }
   }
 
   private registerModernCommands(): void {
@@ -29,11 +70,13 @@ export class ModernRandomFoodBot {
     const modernBasicCommands = createModernBasicCommands(this.database);
     const modernFoodCommands = createModernFoodCommands(this.database);
     const modernSocialCommands = createModernSocialCommands(this.database);
+    const modernDebugCommands = createModernDebugCommands(this.database, this.token);
 
     this.modernBot.registerCommands([
       ...modernBasicCommands,
       ...modernFoodCommands, 
-      ...modernSocialCommands
+      ...modernSocialCommands,
+      ...modernDebugCommands
     ]);
 
     // Set default handler for non-command messages and callbacks

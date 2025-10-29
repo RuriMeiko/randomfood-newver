@@ -18,6 +18,7 @@ export class NeonError extends Error {
 
 export default class NeonDB {
 	private database: any;
+	private neonClient: any;
 	private currentTable: string | null = null;
 
 	constructor({ connectionString }: { connectionString: string }) {
@@ -25,8 +26,8 @@ export default class NeonDB {
 			throw new NeonError({ error: "The `connectionString` must be set." });
 		}
 		
-		const sqlQuery = neon(connectionString);
-		this.database = drizzle(sqlQuery, { schema });
+		this.neonClient = neon(connectionString);
+		this.database = drizzle(this.neonClient, { schema });
 	}
 
 	// Set table/collection equivalent
@@ -47,20 +48,14 @@ export default class NeonDB {
 		}
 		
 		switch (this.currentTable) {
-			case 'mainfood':
-				return schema.mainfood;
-			case 'subfood':
-				return schema.subfood;
-			case 'historyfood':
-				return schema.historyfood;
-			case 'command':
-				return schema.command;
-			case 'credit':
-				return schema.credit;
-			case 'tag':
-				return schema.tag;
-			case 'debt':
-				return schema.debt;
+			case 'food_suggestions':
+				return schema.foodSuggestions;
+			case 'debts':
+				return schema.debts;
+			case 'chat_members':
+				return schema.chatMembers;
+			case 'ai_conversations':
+				return schema.aiConversations;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}
@@ -295,5 +290,18 @@ export default class NeonDB {
 			}
 		}
 		return query;
+	}
+
+	/**
+	 * Execute raw SQL query - needed for AI bot service
+	 */
+	async query(sqlString: string, params: any[] = []): Promise<any[]> {
+		try {
+			// Use neon client with sql.query for parameterized queries
+			const results = await sql.query(this.neonClient, sqlString, params);
+			return results;
+		} catch (error: any) {
+			throw new NeonError({ error: `Failed to execute query: ${error.message}` });
+		}
 	}
 }

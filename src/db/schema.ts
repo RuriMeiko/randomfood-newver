@@ -1,78 +1,64 @@
-import { pgTable, text, integer, timestamp, boolean, serial, jsonb } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, serial, integer, boolean, decimal } from 'drizzle-orm/pg-core';
 
-// Main food table
-export const mainfood = pgTable('mainfood', {
+// Food suggestions history table
+export const foodSuggestions = pgTable('food_suggestions', {
   id: serial('id').primaryKey(),
-  name: text('name').notNull(),
-  img: text('img').notNull(),
-  only: boolean('only').default(false),
+  userId: text('user_id').notNull(),
+  chatId: text('chat_id').notNull(),
+  username: text('username'), // Telegram username
+  suggestion: text('suggestion').notNull(), // Gemini generated food suggestion
+  prompt: text('prompt'), // User's original request/prompt
+  aiResponse: text('ai_response'), // Full AI response for reference
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// Sub food table
-export const subfood = pgTable('subfood', {
+// Debt tracking table
+export const debts = pgTable('debts', {
   id: serial('id').primaryKey(),
-  name: text('name').notNull(),
+  chatId: text('chat_id').notNull(), // Group chat where debt was created
+  debtorUserId: text('debtor_user_id').notNull(), // Who owes money
+  debtorUsername: text('debtor_username'), // Debtor's username
+  creditorUserId: text('creditor_user_id').notNull(), // Who is owed money
+  creditorUsername: text('creditor_username'), // Creditor's username
+  amount: decimal('amount', { precision: 10, scale: 2 }).notNull(), // Amount owed
+  currency: text('currency').default('VND'), // Currency (VND, USD, etc.)
+  description: text('description'), // What the debt is for
+  isPaid: boolean('is_paid').default(false), // Whether debt is settled
   createdAt: timestamp('created_at').defaultNow(),
+  paidAt: timestamp('paid_at'), // When debt was marked as paid
+  aiDetection: text('ai_detection'), // Original AI analysis of the debt
 });
 
-// History food table
-export const historyfood = pgTable('historyfood', {
-  id: serial('id').primaryKey(),
-  userid: text('userid').notNull(),
-  food: integer('food').references(() => mainfood.id),
-  subfood: integer('subfood').references(() => subfood.id),
-  randomAt: timestamp('random_at').defaultNow(),
-});
-
-// Command table for tracking user commands
-export const command = pgTable('command', {
-  id: text('id').primaryKey(), // chat_id as string
-  messageId: integer('message_id'),
-  command: text('command'),
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-// Credit table
-export const credit = pgTable('credit', {
-  id: serial('id').primaryKey(),
-  data: jsonb('data'),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-
-// Tag table for storing tagged users
-export const tag = pgTable('tag', {
-  id: text('id').primaryKey(), // chat_id as string
-  listtag: jsonb('listtag'), // Array of tagged user objects
-  createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
-});
-
-// Debt table for tracking debts between users
-export const debt = pgTable('debt', {
+// Chat members table to track users in groups
+export const chatMembers = pgTable('chat_members', {
   id: serial('id').primaryKey(),
   chatId: text('chat_id').notNull(),
-  fromUserId: text('from_user_id').notNull(),
-  toUserId: text('to_user_id').notNull(),
-  amount: integer('amount').notNull(),
-  description: text('description'),
-  isPaid: boolean('is_paid').default(false),
+  userId: text('user_id').notNull(),
+  username: text('username'),
+  firstName: text('first_name'),
+  lastName: text('last_name'),
+  isActive: boolean('is_active').default(true), // Still in the group
+  lastSeen: timestamp('last_seen').defaultNow(),
   createdAt: timestamp('created_at').defaultNow(),
-  paidAt: timestamp('paid_at'),
 });
 
-export type MainFood = typeof mainfood.$inferSelect;
-export type NewMainFood = typeof mainfood.$inferInsert;
-export type SubFood = typeof subfood.$inferSelect;
-export type NewSubFood = typeof subfood.$inferInsert;
-export type HistoryFood = typeof historyfood.$inferSelect;
-export type NewHistoryFood = typeof historyfood.$inferInsert;
-export type Command = typeof command.$inferSelect;
-export type NewCommand = typeof command.$inferInsert;
-export type Credit = typeof credit.$inferSelect;
-export type NewCredit = typeof credit.$inferInsert;
-export type Tag = typeof tag.$inferSelect;
-export type NewTag = typeof tag.$inferInsert;
-export type Debt = typeof debt.$inferSelect;
-export type NewDebt = typeof debt.$inferInsert;
+// AI conversations log for debugging and improvements
+export const aiConversations = pgTable('ai_conversations', {
+  id: serial('id').primaryKey(),
+  chatId: text('chat_id').notNull(),
+  userId: text('user_id').notNull(),
+  userMessage: text('user_message').notNull(),
+  aiResponse: text('ai_response').notNull(),
+  actionType: text('action_type'), // 'food_suggestion', 'debt_tracking', 'conversation'
+  processingTime: integer('processing_time'), // Response time in ms
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+export type FoodSuggestion = typeof foodSuggestions.$inferSelect;
+export type NewFoodSuggestion = typeof foodSuggestions.$inferInsert;
+export type Debt = typeof debts.$inferSelect;
+export type NewDebt = typeof debts.$inferInsert;
+export type ChatMember = typeof chatMembers.$inferSelect;
+export type NewChatMember = typeof chatMembers.$inferInsert;
+export type AiConversation = typeof aiConversations.$inferSelect;
+export type NewAiConversation = typeof aiConversations.$inferInsert;
