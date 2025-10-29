@@ -142,4 +142,11 @@ export class ModernTelegramBot {
   getCommands(): ModernCommand[] {
     return Array.from(this.commands.values());
   }
+
+  /**
+   * Get Telegram API instance for memory service
+   */
+  getApi(): any {
+    return this.api;
+  }
 }

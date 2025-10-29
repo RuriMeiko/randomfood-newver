@@ -56,6 +56,12 @@ export default class NeonDB {
 				return schema.chatMembers;
 			case 'ai_conversations':
 				return schema.aiConversations;
+			case 'conversation_messages':
+				// Raw table access for conversation messages
+				return null;
+			case 'conversation_summaries':
+				// Raw table access for conversation summaries
+				return null;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}
@@ -297,8 +303,8 @@ export default class NeonDB {
 	 */
 	async query(sqlString: string, params: any[] = []): Promise<any[]> {
 		try {
-			// Use neon client with sql.query for parameterized queries
-			const results = await sql.query(this.neonClient, sqlString, params);
+			// Use neon client directly for parameterized queries
+			const results = await this.neonClient(sqlString, params);
 			return results;
 		} catch (error: any) {
 			throw new NeonError({ error: `Failed to execute query: ${error.message}` });

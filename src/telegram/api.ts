@@ -251,4 +251,38 @@ export default class TelegramApi {
       action: action, // 'typing', 'upload_photo', 'record_video', etc.
     });
   }
+
+  /**
+   * Get chat history from Telegram directly
+   */
+  async getChatHistory(chatId: string | number, limit: number = 20, fromMessageId?: number): Promise<any> {
+    const params: any = {
+      chat_id: chatId,
+      limit: limit,
+    };
+
+    if (fromMessageId) {
+      params.from_message_id = fromMessageId;
+    }
+
+    return this.makeRequest('getChat', params);
+  }
+
+  /**
+   * Get messages using getUpdates with offset
+   */
+  async getMessages(chatId: string | number, limit: number = 20, offset?: number): Promise<any> {
+    // Note: Telegram Bot API doesn't have direct message history access
+    // But we can use getUpdates to get recent messages
+    const params: any = {
+      limit: limit,
+      allowed_updates: ['message', 'callback_query']
+    };
+
+    if (offset) {
+      params.offset = offset;
+    }
+
+    return this.makeRequest('getUpdates', params);
+  }
 }

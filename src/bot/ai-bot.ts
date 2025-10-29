@@ -21,7 +21,13 @@ export class AIFoodDebtBot {
     this.database = config.database;
     this.token = config.telegramToken;
     this.modernBot = new ModernTelegramBot(config.telegramToken);
-    this.aiBotService = new AIBotService(config.database, config.geminiApiKey);
+    
+    // Pass Telegram API to AIBotService for memory functionality
+    this.aiBotService = new AIBotService(
+      config.database, 
+      config.geminiApiKey, 
+      this.modernBot.getApi()
+    );
 
     // Register commands
     this.registerCommands();

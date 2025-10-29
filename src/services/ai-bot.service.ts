@@ -10,15 +10,18 @@ import type {
   NewAiConversation 
 } from '@/db/schema';
 import { GeminiAIService, type GeminiAIResponse } from './gemini-ai.service';
+import { ConversationContextService } from './conversation-context.service';
 import { log } from '@/utils/logger';
 
 export class AIBotService {
   private database: NeonDB;
   private geminiService: GeminiAIService;
+  private conversationContext: ConversationContextService;
 
   constructor(database: NeonDB, geminiApiKey: string) {
     this.database = database;
-    this.geminiService = new GeminiAIService(geminiApiKey);
+    this.conversationContext = new ConversationContextService(database);
+    this.geminiService = new GeminiAIService(geminiApiKey, this.conversationContext);
   }
 
   /**
@@ -40,6 +43,9 @@ export class AIBotService {
     try {
       const startTime = Date.now();
 
+      // Save user message to conversation context
+      await this.conversationContext.saveUserMessage(chatId, userId, userMessage);
+
       // Update/create chat member
       await this.updateChatMember(chatId, userId, username, firstName, lastName);
 
@@ -47,12 +53,25 @@ export class AIBotService {
       const chatMembers = await this.getChatMembers(chatId);
       const memberUsernames = chatMembers.map(m => m.username || m.firstName || m.userId).filter(Boolean);
 
+      // Get conversation context from database
+      const context = await this.conversationContext.getConversationContext(chatId, userId);
+      
+      log.debug('Conversation context loaded', {
+        chatId, userId,
+        messageCount: context.messages.length,
+        summaryCount: context.summaries.length,
+        totalTokens: context.totalTokens,
+        contextStatus: context.contextStatus
+      });
+
       // Process with Gemini AI
       const aiResponse = await this.geminiService.processMessage(
         userMessage, 
         memberUsernames, 
-        userId, 
-        username
+        userId,
+        chatId,
+        username,
+        context
       );
 
       const processingTime = Date.now() - startTime;
@@ -76,6 +95,11 @@ export class AIBotService {
         };
       }
 
+      // Save bot response to conversation context
+      if (aiResponse.response) {
+        await this.conversationContext.saveBotResponse(chatId, userId, aiResponse.response);
+      }
+
       // Handle different action types
       switch (aiResponse.actionType) {
         case 'food_suggestion':
@@ -89,6 +113,16 @@ export class AIBotService {
         case 'conversation':
           // Just conversation, no additional action needed
           break;
+      }
+
+      // Log context usage stats periodically
+      if (Math.random() < 0.1) { // 10% chance
+        const stats = await this.conversationContext.getContextStats(chatId, userId);
+        log.info('Context usage stats', { 
+          chatId, userId, 
+          ...stats,
+          statusCheck: context.contextStatus
+        });
       }
 
       return {

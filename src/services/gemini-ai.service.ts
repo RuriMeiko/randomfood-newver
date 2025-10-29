@@ -1,6 +1,6 @@
 import { log } from '@/utils/logger';
 import { buildSystemPrompt } from '@/prompts/system-prompt';
-import { ConversationMemoryService } from './conversation-memory.service';
+import { ConversationContextService } from './conversation-context.service';
 
 export interface GeminiAIResponse {
   actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'error';
@@ -29,11 +29,11 @@ export interface GeminiAIResponse {
 export class GeminiAIService {
   private apiKey: string;
   private baseUrl = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent';
-  private memoryService: ConversationMemoryService;
+  private conversationContext: ConversationContextService;
 
-  constructor(apiKey: string, memoryService: ConversationMemoryService) {
+  constructor(apiKey: string, conversationContext: ConversationContextService) {
     this.apiKey = apiKey;
-    this.memoryService = memoryService;
+    this.conversationContext = conversationContext;
   }
 
   /**
@@ -44,43 +44,37 @@ export class GeminiAIService {
     chatMembers: string[], 
     userId: string,
     chatId: string,
-    username?: string
+    username?: string,
+    context?: any
   ): Promise<GeminiAIResponse> {
     try {
-      // Lấy lịch sử cuộc trò chuyện
-      const conversationHistory = await this.memoryService.getRecentConversation(chatId, userId, 20);
-      
-      // Kiểm tra xem có cần load thêm context cũ không
-      const needMoreContext = this.memoryService.shouldLoadMoreContext(conversationHistory, userMessage);
-      let extendedHistory: any[] = [];
-      
-      if (needMoreContext) {
-        extendedHistory = await this.memoryService.loadExtendedContext(chatId, userId, 20);
-        log.debug('Loading extended context', { 
-          userId, 
-          extendedCount: extendedHistory.length,
-          reason: 'User referenced past conversation'
+      // Tạo context string từ conversation history
+      let contextString = '';
+      if (context && (context.messages.length > 0 || context.summaries.length > 0)) {
+        contextString = this.conversationContext.createContextForAI(context.messages, context.summaries);
+        
+        log.debug('Using conversation context', {
+          userId, chatId,
+          messageCount: context.messages.length,
+          summaryCount: context.summaries.length,
+          totalTokens: context.totalTokens,
+          contextStatus: context.contextStatus
         });
       }
 
-      // Tạo context summary
-      const allHistory = [...extendedHistory, ...conversationHistory];
-      const contextSummary = this.memoryService.createContextSummary(allHistory);
-
       // Build system prompt với conversation context
-      const systemPrompt = buildSystemPrompt(chatMembers, userId, username, allHistory);
+      const systemPrompt = buildSystemPrompt(chatMembers, userId, username, context?.messages || []);
       
       const requestBody = {
         contents: [{
           parts: [{
             text: `${systemPrompt}
 
-CONTEXT CUỘC TRỎ CHUYỆN:
-${contextSummary}
+${contextString ? `LỊCH SỬ CUỘC TRÒ CHUYỆN:\n${contextString}\n` : ''}
 
 USER MESSAGE MỚI: "${userMessage}"
 
-Dựa trên context và tin nhắn mới, phân tích và trả về JSON:
+Dựa trên ${contextString ? 'lịch sử và ' : ''}tin nhắn mới, phân tích và trả về JSON:
 {
   "actionType": "food_suggestion" | "debt_tracking" | "conversation",
   "response": "Câu trả lời tự nhiên như con người nhắn tin, KHÔNG emoji",
@@ -125,8 +119,9 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
         memberCount: chatMembers.length,
         userId,
         chatId,
-        historyCount: conversationHistory.length,
-        hasExtendedContext: extendedHistory.length > 0
+        hasContext: !!contextString,
+        contextLength: contextString.length,
+        totalTokens: context?.totalTokens || 0
       });
 
       const startTime = Date.now();
@@ -202,7 +197,7 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
           processingTime,
           userId,
           chatId,
-          contextUsed: allHistory.length > 0
+          contextUsed: allMessages.length > 0
         });
 
         return {
