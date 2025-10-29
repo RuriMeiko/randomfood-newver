@@ -2,6 +2,7 @@ import { neon } from '@neondatabase/serverless';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { eq, desc, gte, and, sql } from 'drizzle-orm';
 import * as schema from './schema';
+import { log } from '@/utils/logger';
 
 export class NeonError extends Error {
 	status: any;
@@ -303,25 +304,30 @@ export default class NeonDB {
 	 */
 	async query(sqlString: string, params: any[] = []): Promise<any[]> {
 		try {
-			// Use neon client with sql tagged template function
-			const { neon } = await import('@neondatabase/serverless');
-			const sql = neon(this.database.connectionString || process.env.DATABASE_URL || '');
-			
-			// Use tagged template literal syntax
+			// Use drizzle's query execution instead of raw neon client
 			if (params.length === 0) {
-				const results = await sql`${sqlString}`;
-				return results;
+				const results = await this.database.execute(sql.raw(sqlString));
+				return results.rows;
 			} else {
-				// For parameterized queries, we need to construct the query differently
-				// Convert to neon's expected format
+				// Build parameterized query using drizzle's sql template
 				let query = sqlString;
 				params.forEach((param, index) => {
-					query = query.replace(`$${index + 1}`, `'${param}'`);
+					// Safe parameter substitution with proper escaping
+					const escapedParam = typeof param === 'string' 
+						? `'${param.replace(/'/g, "''")}'`  // Escape single quotes
+						: param?.toString() || 'NULL';
+					query = query.replace(`$${index + 1}`, escapedParam);
 				});
-				const results = await sql`${query}`;
-				return results;
+				
+				const results = await this.database.execute(sql.raw(query));
+				return results.rows;
 			}
 		} catch (error: any) {
+			log.error('Database query error', error, { 
+				sqlString: sqlString.substring(0, 100), 
+				paramCount: params.length,
+				errorMessage: error.message 
+			});
 			throw new NeonError({ error: `Failed to execute query: ${error.message}` });
 		}
 	}
