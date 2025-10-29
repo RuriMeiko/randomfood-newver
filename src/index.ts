@@ -1,6 +1,7 @@
 import * as utils from "@/utils";
 import NeonDB from "@/db/neon";
 import { RandomFoodBot } from "@/bot";
+import { ModernRandomFoodBot } from "@/bot/modern-bot";
 import { log, LogLevel, logger } from "@/utils/logger";
 
 // The Worker's environment bindings
@@ -27,10 +28,16 @@ const worker: ExportedHandler<Bindings> = {
 			connectionString: env.DATABASE_URL,
 		});
 
-		// Initialize bot
-		const bot = new RandomFoodBot({
+		// Initialize modern bot
+		const modernBot = new ModernRandomFoodBot({
+			database: database,
+			telegramToken: env.API_TELEGRAM,
+		});
+
+		// Keep legacy bot for fallback if needed
+		const legacyBot = new RandomFoodBot({
 			token: env.API_TELEGRAM,
-			userBot: "randomfoodruribot",
+			userBot: "randomfoodruribot", 
 			database: database,
 		});
 
@@ -44,24 +51,18 @@ const worker: ExportedHandler<Bindings> = {
 		}
 
 		try {
-			const content = await req.json() as any;
-			const request = { content };
+			const update = await req.json() as any;
 			
-			log.debug('Request content received', { 
-				hasMessage: !!content.message,
-				hasCallback: !!content.callback_query,
-				updateId: content.update_id 
+			log.debug('Webhook update received', { 
+				updateId: update.update_id,
+				hasMessage: !!update.message,
+				hasCallback: !!update.callback_query,
+				messageText: update.message?.text?.substring(0, 50),
+				callbackData: update.callback_query?.data
 			});
 			
-			// Handle different types of updates
-			if (content.message) {
-				return await bot.handleMessage(request);
-			} else if (content.callback_query) {
-				return await bot.handleCallback(request);
-			} else {
-				log.debug('Unknown update type received', { keys: Object.keys(content) });
-				return utils.toJSON("OK");
-			}
+			// Use modern bot for handling updates
+			return await modernBot.handleUpdate(update);
 		} catch (err) {
 			const error = err as Error;
 			log.error('Worker error', error, { 

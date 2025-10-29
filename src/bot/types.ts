@@ -20,6 +20,13 @@ export interface CommandHandler {
   execute: (context: BotContext, args: string, bot: TelegramBot) => Promise<void>;
 }
 
+export interface ModernCommand {
+  name: string;
+  description: string;
+  adminOnly?: boolean;
+  execute(ctx: import('@/telegram/context').TelegramExecutionContext, args: string[]): Promise<any>;
+}
+
 export interface TelegramBot {
   sendMessage(text: string, chatId: string, threadId?: number, keyboard?: any): Promise<any>;
   sendPhoto(photoUrl: string, chatId: string, caption?: string, threadId?: number): Promise<any>;

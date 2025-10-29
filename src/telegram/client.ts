@@ -25,7 +25,12 @@ export class TelegramClient implements TelegramBot {
     };
 
     try {
-      log.api.call('POST', `${this.baseUrl}/sendMessage`, { chatId, textLength: text.length });
+      log.api.call('POST', `${this.baseUrl}/sendMessage`, { 
+        chatId, 
+        textLength: text.length,
+        hasKeyboard: !!keyboard,
+        threadId 
+      });
       
       const response = await fetch(`${this.baseUrl}/sendMessage`, {
         method: 'POST',
@@ -34,12 +39,35 @@ export class TelegramClient implements TelegramBot {
       });
 
       const result = await response.json() as any;
-      log.api.response('POST', '/sendMessage', response.status, { chatId, success: result.ok });
+      
+      // Enhanced error logging
+      if (!response.ok || !result.ok) {
+        log.error(`Telegram API Error: ${response.status}`, undefined, {
+          chatId,
+          status: response.status,
+          statusText: response.statusText,
+          telegramErrorCode: result.error_code,
+          telegramDescription: result.description,
+          requestBody: body,
+          fullResponse: result
+        });
+      } else {
+        log.api.response('POST', '/sendMessage', response.status, { 
+          chatId, 
+          success: result.ok,
+          messageId: result.result?.message_id 
+        });
+      }
       
       return result;
     } catch (error: any) {
-      log.error('Error sending message', error, { chatId, textLength: text.length });
-      return null;
+      log.error('Network Error sending message', error, { 
+        chatId, 
+        textLength: text.length,
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      return { ok: false, error: error.message };
     }
   }
 
@@ -59,16 +87,49 @@ export class TelegramClient implements TelegramBot {
     };
 
     try {
+      log.api.call('POST', `${this.baseUrl}/sendPhoto`, { 
+        chatId, 
+        photoUrl: photoUrl.substring(0, 100) + '...', // Truncate URL for logging
+        captionLength: caption?.length || 0,
+        threadId 
+      });
+
       const response = await fetch(`${this.baseUrl}/sendPhoto`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      return await response.json();
+      const result = await response.json() as any;
+      
+      if (!response.ok || !result.ok) {
+        log.error(`Telegram API Error: ${response.status}`, undefined, {
+          chatId,
+          method: 'sendPhoto',
+          status: response.status,
+          statusText: response.statusText,
+          telegramErrorCode: result.error_code,
+          telegramDescription: result.description,
+          photoUrl: photoUrl.substring(0, 100) + '...',
+          fullResponse: result
+        });
+      } else {
+        log.api.response('POST', '/sendPhoto', response.status, { 
+          chatId, 
+          success: result.ok,
+          messageId: result.result?.message_id 
+        });
+      }
+
+      return result;
     } catch (error: any) {
-      console.error('Error sending photo:', error.message);
-      return null;
+      log.error('Network Error sending photo', error, { 
+        chatId, 
+        photoUrl: photoUrl.substring(0, 100) + '...',
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      return { ok: false, error: error.message };
     }
   }
 
@@ -93,8 +154,13 @@ export class TelegramClient implements TelegramBot {
 
       return await response.json();
     } catch (error: any) {
-      console.error('Error sending sticker:', error.message);
-      return null;
+      log.error('Network Error sending sticker', error, { 
+        chatId,
+        stickerId,
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      return { ok: false, error: error.message };
     }
   }
 
@@ -115,16 +181,50 @@ export class TelegramClient implements TelegramBot {
     };
 
     try {
+      log.api.call('POST', `${this.baseUrl}/editMessageText`, { 
+        chatId, 
+        messageId, 
+        textLength: text.length,
+        hasKeyboard: !!keyboard
+      });
+
       const response = await fetch(`${this.baseUrl}/editMessageText`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      return await response.json();
+      const result = await response.json() as any;
+      
+      if (!response.ok || !result.ok) {
+        log.error(`Telegram API Error: ${response.status}`, undefined, {
+          chatId,
+          messageId,
+          method: 'editMessageText',
+          status: response.status,
+          statusText: response.statusText,
+          telegramErrorCode: result.error_code,
+          telegramDescription: result.description,
+          fullResponse: result
+        });
+      } else {
+        log.api.response('POST', '/editMessageText', response.status, { 
+          chatId, 
+          messageId,
+          success: result.ok
+        });
+      }
+
+      return result;
     } catch (error: any) {
-      console.error('Error editing message:', error.message);
-      return null;
+      log.error('Network Error editing message', error, { 
+        chatId,
+        messageId,
+        textLength: text.length,
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      return { ok: false, error: error.message };
     }
   }
 
@@ -139,16 +239,45 @@ export class TelegramClient implements TelegramBot {
     };
 
     try {
+      log.api.call('POST', `${this.baseUrl}/answerCallbackQuery`, { 
+        callbackId, 
+        hasText: !!text,
+        textLength: text?.length || 0
+      });
+
       const response = await fetch(`${this.baseUrl}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
       });
 
-      return await response.json();
+      const result = await response.json() as any;
+      
+      if (!response.ok || !result.ok) {
+        log.error(`Telegram API Error: ${response.status}`, undefined, {
+          callbackId,
+          method: 'answerCallbackQuery',
+          status: response.status,
+          statusText: response.statusText,
+          telegramErrorCode: result.error_code,
+          telegramDescription: result.description,
+          fullResponse: result
+        });
+      } else {
+        log.api.response('POST', '/answerCallbackQuery', response.status, { 
+          callbackId, 
+          success: result.ok
+        });
+      }
+
+      return result;
     } catch (error: any) {
-      console.error('Error answering callback query:', error.message);
-      return null;
+      log.error('Network Error answering callback query', error, { 
+        callbackId,
+        errorMessage: error.message,
+        errorStack: error.stack
+      });
+      return { ok: false, error: error.message };
     }
   }
 

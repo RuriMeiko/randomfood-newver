@@ -1,11 +1,23 @@
 name = "randomfood"
-account_id = "14d21caaf90af471a0e8f2d520a756ab"
-workers_dev = true # or zone_id = "<ZONE ID>" if you have one
-compatibility_date = "2023-12-31"
 main = "build/index.mjs"
+compatibility_date = "2025-10-29"
+account_id = "14d21caaf90af471a0e8f2d520a756ab"
+workers_dev = true
+send_metrics = true
+minify = true
+logpush = false
+
 [build]
 command = "npm run build"
+
 [triggers]
 crons = ["* * * * *"]
+
 [vars]
+# Environment variables (non-sensitive)
+
+# Example environment configuration
+# [env.staging]
+# name = "randomfood-staging"
+# workers_dev = true
 
