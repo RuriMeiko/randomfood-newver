@@ -176,8 +176,13 @@ export class ConversationContextService {
       if (summary) {
         // Lưu summary vào database
         const summaryTokenCount = this.estimateTokenCount(summary);
-        const startTime = messagesToSummarize[0].timestamp;
-        const endTime = messagesToSummarize[messagesToSummarize.length - 1].timestamp;
+        // Safe timestamp handling for database operations
+        const startTime = messagesToSummarize[0].timestamp instanceof Date 
+          ? messagesToSummarize[0].timestamp 
+          : new Date(messagesToSummarize[0].timestamp);
+        const endTime = messagesToSummarize[messagesToSummarize.length - 1].timestamp instanceof Date
+          ? messagesToSummarize[messagesToSummarize.length - 1].timestamp
+          : new Date(messagesToSummarize[messagesToSummarize.length - 1].timestamp);
 
         await this.database.query(
           `INSERT INTO conversation_summaries 
@@ -266,7 +271,17 @@ Hãy tóm tắt thành 2-3 câu ngắn gọn, tập trung vào thông tin hữu 
     if (messages.length > 0) {
       context += 'TIN NHẮN GẦN ĐÂY:\n';
       messages.slice(-20).forEach((msg, index) => { // Chỉ lấy 20 tin nhắn gần nhất
-        const time = msg.timestamp.toLocaleTimeString('vi-VN', { 
+        // Safe timestamp handling - convert to Date if needed
+        let timestamp: Date;
+        if (msg.timestamp instanceof Date) {
+          timestamp = msg.timestamp;
+        } else if (typeof msg.timestamp === 'string') {
+          timestamp = new Date(msg.timestamp);
+        } else {
+          timestamp = new Date(); // Fallback to current time
+        }
+
+        const time = timestamp.toLocaleTimeString('vi-VN', { 
           hour: '2-digit', 
           minute: '2-digit' 
         });

@@ -2,18 +2,23 @@ import { log } from '@/utils/logger';
 import { buildSystemPrompt } from '@/prompts/system-prompt';
 import { ConversationContextService } from './conversation-context.service';
 
+export interface MessageConfig {
+  shouldSplit: boolean;
+  messages: string[];
+  delays: number[];
+  typingDuration: number;
+}
+
 export interface GeminiAIResponse {
   actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'error';
   response: string;
-  messageBreakdown?: {
-    shouldSplit: boolean;
-    messages: string[];
-  };
+  messageConfig?: MessageConfig;
   data?: {
     // For food suggestions
     foodName?: string;
     description?: string;
     ingredients?: string[];
+    tips?: string;
     
     // For debt tracking
     debtorUsername?: string;
@@ -22,6 +27,9 @@ export interface GeminiAIResponse {
     currency?: string;
     description?: string;
     action?: 'create' | 'pay' | 'list' | 'check';
+    
+    // For conversation
+    conversationResponse?: string;
   };
   success: boolean;
   error?: string;
@@ -79,11 +87,18 @@ Dựa trên ${contextString ? 'lịch sử và ' : ''}tin nhắn mới, phân t�
 {
   "actionType": "food_suggestion" | "debt_tracking" | "conversation",
   "response": "Câu trả lời tự nhiên như con người nhắn tin, KHÔNG emoji",
+  "messageConfig": {
+    "shouldSplit": true/false,
+    "messages": ["Tin nhắn 1", "Tin nhắn 2", "Tin nhắn 3..."],
+    "delays": [1000, 2000, 1500],
+    "typingDuration": 2000
+  },
   "data": {
     // Nếu là food_suggestion:
     "foodName": "Tên món ăn",
     "description": "Cách làm đơn giản cho sinh viên",
-    "ingredients": ["Nguyên liệu dễ kiếm, rẻ"]
+    "ingredients": ["Nguyên liệu dễ kiếm, rẻ"],
+    "tips": "Mẹo nấu nướng"
     
     // Nếu là debt_tracking:
     "debtorUsername": "Người nợ",
@@ -192,6 +207,20 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
 
         const aiResponse = JSON.parse(jsonMatch[0]);
         
+        // LOG CHI TIẾT RESPONSE TỪ GEMINI
+        log.info('🤖 GEMINI RESPONSE DEBUG', {
+          userId, chatId, processingTime,
+          rawAiText: aiResponseText.substring(0, 200),
+          parsedResponse: {
+            actionType: aiResponse.actionType,
+            response: aiResponse.response,
+            hasMessageConfig: !!aiResponse.messageConfig,
+            messageConfig: aiResponse.messageConfig,
+            hasData: !!aiResponse.data,
+            dataKeys: aiResponse.data ? Object.keys(aiResponse.data) : []
+          }
+        });
+        
         // Validate that we have the required response field
         if (!aiResponse.response) {
           log.error('No response field in AI JSON', undefined, { aiResponse, processingTime });
@@ -209,13 +238,39 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
           processingTime,
           userId,
           chatId,
-          hasContext: !!contextString
+          hasContext: !!contextString,
+          messageConfigPresent: !!aiResponse.messageConfig,
+          shouldSplit: aiResponse.messageConfig?.shouldSplit || false
         });
+
+        // Auto-generate messageConfig if AI didn't provide one
+        let messageConfig = aiResponse.messageConfig;
+        if (!messageConfig) {
+          log.warn('Gemini không trả về messageConfig, tự động tạo', {
+            userId, chatId,
+            responseLength: aiResponse.response?.length || 0,
+            actionType: aiResponse.actionType
+          });
+          
+          // Tự động quyết định có nên chia tin nhắn không
+          const shouldAutoSplit = this.shouldAutoSplitMessage(aiResponse.response, aiResponse.actionType);
+          
+          if (shouldAutoSplit) {
+            messageConfig = this.createAutoMessageConfig(aiResponse.response, aiResponse.actionType);
+            log.info('Đã tạo messageConfig tự động', {
+              userId, chatId,
+              shouldSplit: messageConfig.shouldSplit,
+              messageCount: messageConfig.messages.length,
+              actionType: aiResponse.actionType
+            });
+          }
+        }
 
         // Return the parsed response with proper structure
         return {
           actionType: aiResponse.actionType || 'conversation',
           response: aiResponse.response, // This is the clean text response
+          messageConfig: messageConfig,
           data: aiResponse.data || {},
           success: true
         };
@@ -249,6 +304,112 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
         error: error.message
       };
     }
+  }
+
+  /**
+   * Tự động quyết định có nên chia tin nhắn không (theo luật 20 từ)
+   */
+  private shouldAutoSplitMessage(response: string, actionType: string): boolean {
+    if (!response) return false;
+    
+    // Đếm số từ thay vì ký tự
+    const wordCount = response.trim().split(/\s+/).length;
+    
+    // Chỉ gửi 1 tin nếu THẬT NGẮN (<10 từ) và là xác nhận đơn giản
+    if (wordCount < 10 && (
+      response.match(/^(ok|được|ừm|chào|hi|hello|bye|cảm ơn|thanks)/i) ||
+      actionType === 'confirmation'
+    )) {
+      return false;
+    }
+    
+    // Tất cả các trường hợp khác đều chia nhỏ
+    return true;
+  }
+  
+  /**
+   * Tự động tạo messageConfig cho response (theo luật 20 từ/tin)
+   */
+  private createAutoMessageConfig(response: string, actionType: string): MessageConfig {
+    // Hàm helper để chia text thành chunks 20 từ
+    const splitIntoChunks = (text: string, maxWords: number = 20): string[] => {
+      const words = text.trim().split(/\s+/);
+      const chunks: string[] = [];
+      
+      for (let i = 0; i < words.length; i += maxWords) {
+        chunks.push(words.slice(i, i + maxWords).join(' '));
+      }
+      
+      return chunks;
+    };
+    
+    if (actionType === 'food_suggestion') {
+      // Chia food suggestion với prefix tự nhiên
+      const mainContent = splitIntoChunks(response, 15); // Để lại chỗ cho prefix
+      const messageCount = 2 + mainContent.length;
+      return {
+        shouldSplit: true,
+        messages: [
+          'Ờ để em nghĩ cái...',
+          ...mainContent,
+          'Dễ mà ngon đó bạn!'
+        ].filter(m => m.length > 1),
+        delays: Array(messageCount).fill(0).map(() => 
+          Math.floor(Math.random() * 600) + 800 // 0.8-1.4s random
+        ),
+        typingDuration: 800 // Giảm typing time
+      };
+    }
+    
+    if (actionType === 'debt_tracking') {
+      // Chia debt tracking
+      const mainContent = splitIntoChunks(response, 15);
+      const messageCount = 1 + mainContent.length;
+      return {
+        shouldSplit: true,
+        messages: [
+          'Để em check lại...',
+          ...mainContent
+        ],
+        delays: Array(messageCount).fill(0).map(() => 
+          Math.floor(Math.random() * 400) + 600 // 0.6-1.0s random
+        ),
+        typingDuration: 600
+      };
+    }
+    
+    // Conversation - chia thành chunks 20 từ
+    const chunks = splitIntoChunks(response, 20);
+    
+    if (chunks.length === 1) {
+      // Nếu vẫn chỉ 1 chunk, có thể chia theo dấu chấm
+      const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 0);
+      if (sentences.length > 1) {
+        const shortChunks = sentences.map(s => {
+          const words = s.trim().split(/\s+/);
+          return words.length > 20 ? splitIntoChunks(s.trim(), 20) : [s.trim()];
+        }).flat();
+        
+        return {
+          shouldSplit: true,
+          messages: shortChunks,
+          delays: Array(shortChunks.length).fill(0).map(() => 
+            Math.floor(Math.random() * 500) + 600 // 0.6-1.1s random
+          ),
+          typingDuration: 700
+        };
+      }
+    }
+    
+    // Multiple chunks
+    return {
+      shouldSplit: true,
+      messages: chunks,
+      delays: Array(chunks.length).fill(0).map(() => 
+        Math.floor(Math.random() * 500) + 600 // 0.6-1.1s random  
+      ),
+      typingDuration: 700
+    };
   }
 
   /**

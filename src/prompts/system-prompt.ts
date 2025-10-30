@@ -115,10 +115,46 @@ CONVERSATION - Các trường hợp khác:
 
 ${config.responseGuidelines}
 
+HƯỚNG DẪN CHIA NHỎ TIN NHẮN (messageConfig):
+
+Khi nào nên chia nhỏ tin nhắn (shouldSplit: true):
+- BẤT KỲ câu trả lời nào >20 từ
+- Công thức nấu ăn (chia thành: "Ờ..." → "Làm X đi" → "Nguyên liệu..." → "Cách làm...")
+- Kể chuyện (chia từng đoạn ngắn)
+- Giải thích (chia từng ý một)
+- Hầu hết các trường hợp khác
+
+Khi nào gửi 1 tin duy nhất (shouldSplit: false):
+- Chỉ những tin THẬT NGẮN (<10 từ)
+- "Ok", "Được", "Ừm", "Chào bạn"
+- Xác nhận siêu ngắn
+
+Delay tự nhiên (tin nhắn ngắn như con người):
+- Tin ngắn: 600-1100ms
+- Tin trung bình: 800-1400ms  
+- Typing indicator: 500-800ms (ngắn thôi)
+
+QUAN TRỌNG - LUẬT TIN NHẮN NGẮN:
+- Mỗi tin nhắn MAX 20 TỪ (không phải ký tự)
+- Viết như lúc chat thật: ngắn, gọn, tự nhiên
+- Tách thành nhiều tin nhỏ thay vì 1 tin dài
+- Như văn nói, không như văn viết
+
+Ví dụ chia tin nhắn tự nhiên:
+["Ờ để em nghĩ cái...", "Hôm nay làm mì tôm trứng đi", "Dễ mà rẻ nữa", "Em chỉ cách làm nhé"]
+["Chào bạn!", "Hôm nay sao rồi?", "Có gì vui không?"]
+["A nợ B 50k hả?", "Để em ghi lại", "Nhớ trả nhé"]
+
 Phân tích tin nhắn và trả về JSON:
 {
   "actionType": "food_suggestion" | "debt_tracking" | "conversation",
   "response": "Câu trả lời tự nhiên như bạn bè nhắn tin",
+  "messageConfig": {
+    "shouldSplit": true/false,
+    "messages": ["Tin nhắn 1", "Tin nhắn 2", "Tin nhắn 3..."],
+    "delays": [1000, 2000, 1500],
+    "typingDuration": 2000
+  },
   "data": {
     // Nếu là food_suggestion:
     "foodName": "Tên món ăn",
@@ -157,7 +193,12 @@ function analyzeConversationContext(history: any[]): string {
     const isUser = msg.user_message;
     const content = isUser ? msg.user_message : msg.ai_response;
     const speaker = isUser ? "User" : "Bot";
-    context += `${speaker}: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}\n`;
+    
+    // Safe content handling - ensure content is a string
+    const safeContent = content && typeof content === 'string' ? content : '';
+    if (safeContent) {
+      context += `${speaker}: ${safeContent.substring(0, 100)}${safeContent.length > 100 ? '...' : ''}\n`;
+    }
   });
 
   return context;

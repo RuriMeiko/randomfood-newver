@@ -144,15 +144,32 @@ export default class TelegramApi {
    * Send a message to a chat
    */
   async sendMessage(params: SendMessageParams): Promise<any> {
+    // Validate text is not empty before processing
+    if (!params.text || params.text.trim().length === 0) {
+      log.error('Attempted to send empty message via Telegram API', undefined, {
+        chatId: params.chat_id,
+        textProvided: !!params.text,
+        textLength: params.text?.length || 0,
+        textValue: params.text || 'UNDEFINED'
+      });
+      throw new Error('Message text cannot be empty');
+    }
+
     const messageParams = {
       ...params,
-      parse_mode: params.parse_mode || 'HTML',
+      // Use plain text instead of HTML to avoid parsing issues
+      parse_mode: undefined, // Remove HTML parse mode that might cause issues
     };
     
-    // Clean HTML entities in text to prevent parsing errors
-    if (messageParams.text) {
-      messageParams.text = this.cleanHtmlEntities(messageParams.text);
-    }
+    // Ensure text is clean and not empty after processing
+    messageParams.text = params.text.trim();
+    
+    log.debug('Sending message via Telegram API', {
+      chatId: params.chat_id,
+      textLength: messageParams.text.length,
+      textPreview: messageParams.text.substring(0, 50),
+      parseMode: messageParams.parse_mode
+    });
     
     return this.makeRequest('sendMessage', messageParams);
   }

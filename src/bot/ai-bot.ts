@@ -3,6 +3,7 @@ import type NeonDB from '@/db/neon';
 import { ModernTelegramBot } from '@/telegram/modern-client';
 import { createAICommands } from '@/commands/ai/smart-commands';
 import { AIBotService } from '@/services/ai-bot.service';
+import { MessageSenderService, type TelegramAPI } from '@/services/message-sender.service';
 import { log } from '@/utils/logger';
 
 export interface AIBotConfig {
@@ -15,6 +16,7 @@ export class AIFoodDebtBot {
   private modernBot: ModernTelegramBot;
   private database: NeonDB;
   private aiBotService: AIBotService;
+  private messageSender: MessageSenderService;
   private token: string;
 
   constructor(config: AIBotConfig) {
@@ -22,11 +24,26 @@ export class AIFoodDebtBot {
     this.token = config.telegramToken;
     this.modernBot = new ModernTelegramBot(config.telegramToken);
     
+    // Create Telegram API wrapper for message sender
+    const telegramAPI: TelegramAPI = {
+      sendMessage: async (chatId: string, text: string) => {
+        return await this.modernBot.getApi().sendMessage({
+          chat_id: parseInt(chatId),
+          text: text
+        });
+      },
+      sendChatAction: async (chatId: string, action: string) => {
+        return await this.modernBot.getApi().sendChatAction(parseInt(chatId), action);
+      }
+    };
+    
+    // Initialize message sender service
+    this.messageSender = new MessageSenderService(telegramAPI);
+    
     // Pass Telegram API to AIBotService for memory functionality
     this.aiBotService = new AIBotService(
       config.database, 
-      config.geminiApiKey, 
-      this.modernBot.getApi()
+      config.geminiApiKey
     );
 
     // Register commands
@@ -77,38 +94,34 @@ export class AIFoodDebtBot {
               const processingTime = Date.now() - startTime;
               
               if (result.success) {
-                // Check if we should split the message
-                if (result.messageBreakdown?.shouldSplit && result.messageBreakdown.messages.length > 1) {
-                  log.debug('Sending split messages', {
-                    userId, chatId,
-                    messageCount: result.messageBreakdown.messages.length,
-                    actionType: result.actionType
-                  });
+                // Use MessageSenderService to handle natural message sending
+                log.debug('Sending AI response with MessageSenderService', {
+                  userId, chatId,
+                  actionType: result.actionType,
+                  responseLength: result.response?.length || 0,
+                  hasMessageConfig: !!result.messageConfig,
+                  shouldSplit: result.messageConfig?.shouldSplit || false
+                });
 
-                  // Send messages with realistic delays
-                  for (let i = 0; i < result.messageBreakdown.messages.length; i++) {
-                    const message = result.messageBreakdown.messages[i];
-                    
-                    // Show typing for each message
-                    await ctx.sendTypingAction();
-                    
-                    // Random delay between messages (1-3 seconds) to simulate human typing
-                    const delay = Math.random() * 2000 + 1000;
-                    await new Promise(resolve => setTimeout(resolve, delay));
-                    
-                    await ctx.sendMessage(message);
-                  }
-                } else {
-                  // Send as single message
-                  log.debug('Sending single message', {
-                    userId, chatId,
-                    actionType: result.actionType,
-                    responseLength: result.response?.length || 0
-                  });
+                // Validate response before sending
+                const responseText = result.response && result.response.trim().length > 0 
+                  ? result.response 
+                  : 'uh, tui k hiểu bà nói gì';
 
-                  await ctx.sendMessage(result.response || 'uh, tui k hiểu bà nói gì');
-                }
+                log.debug('Sending response', {
+                  userId, chatId,
+                  hasResponse: !!result.response,
+                  responseLength: result.response?.length || 0,
+                  finalText: responseText.substring(0, 50)
+                });
+
+                await this.messageSender.sendResponse(
+                  chatId,
+                  responseText,
+                  result.messageConfig
+                );
               } else {
+                // Send error message as single message
                 await ctx.sendMessage(result.response || 'lỗi r bà ơi, thử lại đi');
               }
 

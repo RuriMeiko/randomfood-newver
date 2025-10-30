@@ -124,10 +124,24 @@ export class AIBotService {
         });
       }
 
+      // LOG TRƯỚC KHI RETURN ĐỂ CHECK MESSAGECONFIG
+      log.info('🔍 AI BOT SERVICE TRƯỚC KHI RETURN', {
+        chatId, userId,
+        response: aiResponse.response?.substring(0, 50),
+        actionType: aiResponse.actionType,
+        hasMessageConfig: !!aiResponse.messageConfig,
+        messageConfig: aiResponse.messageConfig ? {
+          shouldSplit: aiResponse.messageConfig.shouldSplit,
+          messageCount: aiResponse.messageConfig.messages?.length,
+          delays: aiResponse.messageConfig.delays
+        } : null
+      });
+
       return {
         success: true,
         response: aiResponse.response,
-        actionType: aiResponse.actionType
+        actionType: aiResponse.actionType,
+        messageConfig: aiResponse.messageConfig  // ĐẢM BẢO TRUYỀN messageConfig
       };
 
     } catch (error: any) {

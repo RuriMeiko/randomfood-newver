@@ -58,11 +58,15 @@ export default class NeonDB {
 			case 'ai_conversations':
 				return schema.aiConversations;
 			case 'conversation_messages':
-				// Raw table access for conversation messages
-				return null;
+				return schema.conversationMessages;
 			case 'conversation_summaries':
-				// Raw table access for conversation summaries
-				return null;
+				return schema.conversationSummaries;
+			case 'bot_memories':
+				return schema.botMemories;
+			case 'bot_moods':
+				return schema.botMoods;
+			case 'debt_records':
+				return schema.debtRecords;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}
@@ -301,26 +305,16 @@ export default class NeonDB {
 
 	/**
 	 * Execute raw SQL query - needed for AI bot service
+	 * Uses neon client's query method for proper parameter handling
 	 */
 	async query(sqlString: string, params: any[] = []): Promise<any[]> {
 		try {
-			// Use drizzle's query execution instead of raw neon client
 			if (params.length === 0) {
-				const results = await this.database.execute(sql.raw(sqlString));
-				return results.rows;
+				// No parameters - use tagged template
+				return await this.neonClient`${sqlString}`;
 			} else {
-				// Build parameterized query using drizzle's sql template
-				let query = sqlString;
-				params.forEach((param, index) => {
-					// Safe parameter substitution with proper escaping
-					const escapedParam = typeof param === 'string' 
-						? `'${param.replace(/'/g, "''")}'`  // Escape single quotes
-						: param?.toString() || 'NULL';
-					query = query.replace(`$${index + 1}`, escapedParam);
-				});
-				
-				const results = await this.database.execute(sql.raw(query));
-				return results.rows;
+				// With parameters - use neon client's query method
+				return await this.neonClient.query(sqlString, params);
 			}
 		} catch (error: any) {
 			log.error('Database query error', error, { 
