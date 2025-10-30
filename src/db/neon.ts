@@ -61,12 +61,6 @@ export default class NeonDB {
 				return schema.conversationMessages;
 			case 'conversation_summaries':
 				return schema.conversationSummaries;
-			case 'bot_memories':
-				return schema.botMemories;
-			case 'bot_moods':
-				return schema.botMoods;
-			case 'debt_records':
-				return schema.debtRecords;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}
