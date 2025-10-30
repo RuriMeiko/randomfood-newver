@@ -35,6 +35,7 @@ export class AIBotService {
     firstName?: string,
     lastName?: string
   ): Promise<{
+    messageConfig: any;
     success: boolean;
     response: string;
     actionType: string;

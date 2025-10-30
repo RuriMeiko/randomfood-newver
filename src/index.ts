@@ -1,8 +1,5 @@
 import * as utils from "@/utils";
 import NeonDB from "@/db/neon";
-import { RandomFoodBot } from "@/bot";
-import { ModernRandomFoodBot } from "@/bot/modern-bot";
-import { SimpleFoodBot } from "@/bot/simple-bot";
 import { AIFoodDebtBot } from "@/bot/ai-bot";
 import { log, LogLevel, logger } from "@/utils/logger";
 

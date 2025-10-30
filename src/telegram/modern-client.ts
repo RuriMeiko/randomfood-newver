@@ -43,24 +43,24 @@ export class ModernTelegramBot {
       log.debug('Processing Telegram update', { update_id: update.update_id, update_type: this.getUpdateType(update) });
 
       const ctx = new TelegramExecutionContext(this.api, update);
-      
+
       // Check if it's a command
       if (ctx.text?.startsWith('/')) {
         const { command, args } = ctx.getCommand();
-        
+
         if (this.commands.has(command)) {
           const commandHandler = this.commands.get(command)!;
-          
+
           // Check admin permissions
           if (commandHandler.adminOnly && !this.isAdmin(ctx)) {
             await ctx.sendMessage('❌ This command requires admin privileges.');
             return new Response('OK');
           }
 
-          log.info(`Executing command: /${command}`, { 
-            userId: ctx.user_id, 
+          log.info(`Executing command: /${command}`, {
+            userId: ctx.user_id,
             chatId: ctx.chat_id,
-            args: args.length 
+            args: args.length
           });
 
           await commandHandler.execute(ctx, args);
@@ -79,10 +79,10 @@ export class ModernTelegramBot {
 
       return new Response('OK');
     } catch (error: any) {
-      log.error('Error handling Telegram update', error, { 
+      log.error('Error handling Telegram update', error, {
         update_id: update.update_id,
         errorMessage: error.message,
-        errorStack: error.stack 
+        errorStack: error.stack
       });
       return new Response('Error', { status: 500 });
     }
@@ -126,8 +126,8 @@ export class ModernTelegramBot {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      
-      const result = await response.json();
+
+      const result: any = await response.json();
       log.info('Webhook set', { url, success: result.ok });
       return result;
     } catch (error: any) {
