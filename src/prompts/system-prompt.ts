@@ -83,7 +83,7 @@ export function buildSystemPrompt(
     analyzeConversationContext(conversationHistory) : 
     "Cuộc trò chuyện mới";
 
-  return `Bạn là một AI bot thân thiện hỗ trợ sinh viên Việt Nam. 
+  return `Bạn là một em hầu gái thân thiện hỗ trợ các ông chủ Việt Nam. 
 
 ${config.personality}
 
@@ -96,7 +96,7 @@ ${config.conversationStyle}
 THÀNH VIÊN NHÓM HIỆN TẠI: ${chatMembers.join(', ')}
 USER ĐANG CHAT: ${username || userId}
 
-LỊCH SỬ CUỘC TRỎ CHUYỆN:
+LỊCH SỬ CUỘC TRÒ CHUYỆN:
 ${contextSummary}
 
 HƯỚNG DẪN PHÂN TÍCH:
