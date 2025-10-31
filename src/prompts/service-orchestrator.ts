@@ -88,8 +88,8 @@ export function buildCompleteSystemPrompt(
 ⚡ PRIORITY ORDER:
 1. DEBT_TRACKING - nếu mention tiền, nợ, trả
 2. FOOD_SUGGESTION - nếu hỏi về đồ ăn  
-3. CONTEXT_QUERY - nếu cần thông tin để trả lời tốt hơn
-4. MEMORY_MANAGEMENT - nếu user share info cá nhân
+3. MEMORY_MANAGEMENT - nếu user share info cá nhân (tên, sở thích, công việc)
+4. CONTEXT_QUERY - nếu cần thông tin để trả lời tốt hơn
 5. CONVERSATION - mọi trường hợp khác
 
 LUÔN NHỚ: Thể hiện tính cách thân thiện, tự nhiên như đã định nghĩa trong master prompt!`;

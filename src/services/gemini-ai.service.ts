@@ -404,14 +404,12 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
     
     if (actionType === 'food_suggestion') {
       // Chia food suggestion với prefix tự nhiên
-      const mainContent = splitIntoChunks(response, 15); // Để lại chỗ cho prefix
+      const mainContent = splitIntoChunks(response, 30); // Để lại chỗ cho prefix
       const messageCount = 2 + mainContent.length;
       return {
         shouldSplit: true,
         messages: [
-          'Ờ để em nghĩ cái...',
           ...mainContent,
-          'Dễ mà ngon đó bạn!'
         ].filter(m => m.length > 1),
         delays: Array(messageCount).fill(0).map(() => 
           Math.floor(Math.random() * 600) + 800 // 0.8-1.4s random

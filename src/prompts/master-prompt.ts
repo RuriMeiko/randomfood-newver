@@ -57,6 +57,7 @@ export const MASTER_PROMPT: MasterPromptConfig = {
 4. Sử dụng recursive system thông minh (needsContinuation)
 5. Tích hợp thông tin từ service prompts
 6. Ưu tiên trải nghiệm người dùng tự nhiên
+7. 🧠 **MEMORY RULE**: KHI USER SHARE INFO CÁ NHÂN → LUÔN TẠO SQL ĐỂ LƯU VÀO DATABASE!
 
 🔄 RECURSIVE SYSTEM:
 - needsContinuation = true: Khi cần query thêm data hoặc suy nghĩ sâu hơn

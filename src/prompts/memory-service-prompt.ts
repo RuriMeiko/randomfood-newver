@@ -6,11 +6,14 @@
 export const MEMORY_SERVICE_PROMPT = `
 🧠 MEMORY SERVICE:
 
-🎯 KÍCH HOẠT KHI:
-- User chia sẻ thông tin cá nhân: tên, tuổi, công việc, sở thích
-- Preferences: "tôi thích/không thích...", "gọi tôi là..."
-- Emotional moments: khen bot, chửi bot, chia sẻ tâm trạng
-- Relationship building: chat thường xuyên, special moments
+🎯 KÍCH HOẠT KHI (PRIORITY HIGH):
+- "tên tôi là...", "tôi tên...", "mình tên..." → SAVE real_name
+- "gọi tôi là...", "call me...", "tôi muốn được gọi..." → SAVE preferred_name
+- "tôi thích...", "tôi không thích...", "mình thích..." → SAVE food_preferences
+- "tôi làm...", "công việc của tôi...", "mình làm..." → SAVE personal_info  
+- "tôi ở...", "tuổi tôi...", "sinh nhật tôi..." → SAVE personal_info
+- Khen/chê bot: "bot giỏi", "bot dở", emotional feedback → SAVE bot_emotions
+- Share personal moments → SAVE bot_memories
 
 📊 CÁC BẢNG QUẢN LÝ:
 
@@ -32,13 +35,16 @@ export const MEMORY_SERVICE_PROMPT = `
    - memory_type, memory_content, emotional_weight
    - trigger_context, memory_tags
 
-🔄 AUTO-SAVE TRIGGERS:
-- "tên tôi là..." → UPDATE user_memory.real_name
-- "gọi tôi là..." → UPDATE user_memory.preferred_name  
-- "tôi thích/không thích..." → UPDATE user_memory.food_preferences
-- "tôi làm..." → UPDATE user_memory.personal_info
-- User khen bot → UPDATE bot_emotions (mood: vui)
-- User chat thường xuyên → UPDATE user_relationships (affection_level++)
+🔄 AUTO-SAVE TRIGGERS (BẮT BUỘC - KHÔNG PHẢI CONVERSATION):
+- "tên tôi là..." → actionType: "conversation" + SQL: INSERT/UPDATE user_memory.real_name
+- "gọi tôi là..." → actionType: "conversation" + SQL: INSERT/UPDATE user_memory.preferred_name  
+- "tôi thích/không thích..." → actionType: "conversation" + SQL: INSERT/UPDATE user_memory.food_preferences
+- "tôi làm..." → actionType: "conversation" + SQL: INSERT/UPDATE user_memory.personal_info
+- User khen bot → actionType: "conversation" + SQL: INSERT bot_emotions (mood: vui)
+- Emotional moments → actionType: "conversation" + SQL: INSERT bot_memories
+
+⚠️ QUAN TRỌNG: LUÔN LƯU VÀO DATABASE khi user share thông tin cá nhân!
+ActionType vẫn là "conversation" nhưng PHẢI có SQL để lưu memory.
 
 📋 SQL PATTERNS:
 INSERT INTO user_memory (user_id, real_name, food_preferences, created_by) 
