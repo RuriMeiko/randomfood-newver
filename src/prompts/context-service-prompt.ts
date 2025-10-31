@@ -46,57 +46,10 @@ contextQuery: {
 `;
 
 export const CONTEXT_SERVICE_EXAMPLES = `
-VÍ DỤ CONTEXT SERVICE:
-
-User: "Chào bot!" (first time greeting - need to check if we know user)
-{
-  "actionType": "context_query",
-  "response": "[TỰ TẠO response chào hỏi, có thể hơi chần chừ vì đang check info]",
-  "sql": "SELECT preferred_name, real_name, personality_traits, interests FROM user_memory WHERE user_id = $1",
-  "sqlParams": ["telegram_user_id"],
-  "needsRecursion": true,
-  "contextQuery": {
-    "purpose": "Check if this is returning user vs new user, personalize greeting",
-    "expectedDataType": "user_identity"
-  }
-}
-
-User: "bot nhớ tôi không?"
-{
-  "actionType": "context_query", 
-  "response": "[TỰ TẠO response tự tin về việc nhớ, sẽ check để chắc chắn]",
-  "sql": "SELECT affection_level, special_memories, personal_notes FROM user_relationships WHERE chat_id = $1 AND user_id = $2",
-  "sqlParams": ["telegram_chat_id", "telegram_user_id"],
-  "needsRecursion": true,
-  "contextQuery": {
-    "purpose": "Recall special memories and relationship with user", 
-    "expectedDataType": "relationship_data"
-  }
-}
-
-User: "bot buồn không?"
-{
-  "actionType": "context_query",
-  "response": "[TỰ TẠO response sẽ kiểm tra cảm xúc hiện tại của bot]",
-  "sql": "SELECT current_mood, mood_intensity, emotional_trigger FROM bot_emotions WHERE chat_id = $1 ORDER BY updated_at DESC LIMIT 1",
-  "sqlParams": ["telegram_chat_id"], 
-  "needsRecursion": true,
-  "contextQuery": {
-    "purpose": "Check bot's current emotional state",
-    "expectedDataType": "emotional_state"
-  }
-}
-
-User: "gợi ý món ăn đi" (need to check preferences first)
-{
-  "actionType": "context_query",
-  "response": "[TỰ TẠO response sẽ check sở thích để gợi ý phù hợp]",
-  "sql": "SELECT food_preferences, eating_habits, preferred_name FROM user_memory WHERE user_id = $1", 
-  "sqlParams": ["telegram_user_id"],
-  "needsRecursion": true,
-  "contextQuery": {
-    "purpose": "Get food preferences to suggest personalized dish based on user's taste",
-    "expectedDataType": "food_profile"
-  }
-}
+🔍 CONTEXT QUERY GUIDANCE:
+- User identity: Check user_memory for personalization
+- Relationships: Query user_relationships for affection/memories  
+- Bot emotions: Get current mood from bot_emotions
+- Food preferences: Check user preferences before suggestions
+- Always use needsRecursion=true with contextQuery purpose
 `;

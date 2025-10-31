@@ -180,7 +180,7 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
           temperature: 0.7,
           topK: 1,
           topP: 1,
-          maxOutputTokens: 1000,
+          maxOutputTokens: 4000,
         }
       };
 
@@ -300,28 +300,8 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
           shouldSplit: aiResponse.messageConfig?.shouldSplit || false
         });
 
-        // Auto-generate messageConfig if AI didn't provide one
-        let messageConfig = aiResponse.messageConfig;
-        if (!messageConfig) {
-          log.warn('Gemini không trả về messageConfig, tự động tạo', {
-            userId, chatId,
-            responseLength: aiResponse.response?.length || 0,
-            actionType: aiResponse.actionType
-          });
-          
-          // Tự động quyết định có nên chia tin nhắn không
-          const shouldAutoSplit = this.shouldAutoSplitMessage(aiResponse.response, aiResponse.actionType);
-          
-          if (shouldAutoSplit) {
-            messageConfig = this.createAutoMessageConfig(aiResponse.response, aiResponse.actionType);
-            log.info('Đã tạo messageConfig tự động', {
-              userId, chatId,
-              shouldSplit: messageConfig.shouldSplit,
-              messageCount: messageConfig.messages.length,
-              actionType: aiResponse.actionType
-            });
-          }
-        }
+        // AI tự quyết định messageConfig, không cần auto-generate
+        let messageConfig = aiResponse.messageConfig || null;
 
         // Return the parsed response with proper structure
         return {
@@ -365,107 +345,5 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
     }
   }
 
-  /**
-   * Tự động quyết định có nên chia tin nhắn không (theo luật 20 từ)
-   */
-  private shouldAutoSplitMessage(response: string, actionType: string): boolean {
-    if (!response) return false;
-    
-    // Đếm số từ thay vì ký tự
-    const wordCount = response.trim().split(/\s+/).length;
-    
-    // Chỉ gửi 1 tin nếu THẬT NGẮN (<10 từ) và là xác nhận đơn giản
-    if (wordCount < 10 && (
-      response.match(/^(ok|được|ừm|chào|hi|hello|bye|cảm ơn|thanks)/i) ||
-      actionType === 'confirmation'
-    )) {
-      return false;
-    }
-    
-    // Tất cả các trường hợp khác đều chia nhỏ
-    return true;
-  }
-  
-  /**
-   * Tự động tạo messageConfig cho response (theo luật 20 từ/tin)
-   */
-  private createAutoMessageConfig(response: string, actionType: string): MessageConfig {
-    // Hàm helper để chia text thành chunks 20 từ
-    const splitIntoChunks = (text: string, maxWords: number = 20): string[] => {
-      const words = text.trim().split(/\s+/);
-      const chunks: string[] = [];
-      
-      for (let i = 0; i < words.length; i += maxWords) {
-        chunks.push(words.slice(i, i + maxWords).join(' '));
-      }
-      
-      return chunks;
-    };
-    
-    if (actionType === 'food_suggestion') {
-      // Chia food suggestion với prefix tự nhiên
-      const mainContent = splitIntoChunks(response, 30); // Để lại chỗ cho prefix
-      const messageCount = 2 + mainContent.length;
-      return {
-        shouldSplit: true,
-        messages: [
-          ...mainContent,
-        ].filter(m => m.length > 1),
-        delays: Array(messageCount).fill(0).map(() => 
-          Math.floor(Math.random() * 600) + 800 // 0.8-1.4s random
-        ),
-        typingDuration: 800 // Giảm typing time
-      };
-    }
-    
-    if (actionType === 'debt_tracking') {
-      // Chia debt tracking
-      const mainContent = splitIntoChunks(response, 15);
-      const messageCount = 1 + mainContent.length;
-      return {
-        shouldSplit: true,
-        messages: [
-          ...mainContent
-        ],
-        delays: Array(messageCount).fill(0).map(() => 
-          Math.floor(Math.random() * 400) + 600 // 0.6-1.0s random
-        ),
-        typingDuration: 600
-      };
-    }
-    
-    // Conversation - chia thành chunks 20 từ
-    const chunks = splitIntoChunks(response, 20);
-    
-    if (chunks.length === 1) {
-      // Nếu vẫn chỉ 1 chunk, có thể chia theo dấu chấm
-      const sentences = response.split(/[.!?]+/).filter(s => s.trim().length > 0);
-      if (sentences.length > 1) {
-        const shortChunks = sentences.map(s => {
-          const words = s.trim().split(/\s+/);
-          return words.length > 20 ? splitIntoChunks(s.trim(), 20) : [s.trim()];
-        }).flat();
-        
-        return {
-          shouldSplit: true,
-          messages: shortChunks,
-          delays: Array(shortChunks.length).fill(0).map(() => 
-            Math.floor(Math.random() * 500) + 600 // 0.6-1.1s random
-          ),
-          typingDuration: 700
-        };
-      }
-    }
-    
-    // Multiple chunks
-    return {
-      shouldSplit: true,
-      messages: chunks,
-      delays: Array(chunks.length).fill(0).map(() => 
-        Math.floor(Math.random() * 500) + 600 // 0.6-1.1s random  
-      ),
-      typingDuration: 700
-    };
-  }
 
 }

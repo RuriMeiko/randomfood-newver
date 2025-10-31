@@ -72,50 +72,9 @@ export const DEBT_SERVICE_PROMPT = `
 `;
 
 export const DEBT_SERVICE_EXAMPLES = `
-VÍ DỤ DEBT SERVICE:
-
-User: "tôi nợ An 50k ăn trưa"
-{
-  "actionType": "debt_tracking",
-  "response": "[TỰ TẠO response xác nhận thông tin debt vừa ghi]",
-  "sql": "INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
-  "sqlParams": ["telegram_chat_id", "telegram_user_id", "telegram_username", "virtual_an_id", "An", 50000, "VND", "ăn trưa"],
-  "data": {
-    "debtorUsername": "telegram_username",
-    "creditorUsername": "An",
-    "amount": 50000,
-    "currency": "VND", 
-    "description": "ăn trưa",
-    "action": "create"
-  }
-}
-
-User: "a nợ Ngọc Long 503k, Ngọc Long nợ Hưng Thịnh 28k, a nợ Hưng Thịnh 28k"
-{
-  "actionType": "debt_tracking",
-  "response": "[TỰ TẠO response xác nhận 3 khoản nợ và thông báo đã ghi vào hệ thống]",
-  "sql": "INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW());\nINSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($9, $10, $11, $12, $13, $14, $15, $16, NOW());\nINSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($17, $18, $19, $20, $21, $22, $23, $24, NOW())",
-  "sqlParams": ["telegram_chat_id", "telegram_user_id", "telegram_username", "virtual_ngoc_long_id", "Ngọc Long", 503000, "VND", "ghi nợ", "telegram_chat_id", "virtual_ngoc_long_id", "Ngọc Long", "virtual_hung_thinh_id", "Hưng Thịnh", 28000, "VND", "ghi nợ", "telegram_chat_id", "telegram_user_id", "telegram_username", "virtual_hung_thinh_id", "Hưng Thịnh", 28000, "VND", "ghi nợ"],
-  "data": {
-    "action": "create_multiple",
-    "debts": [
-      {"debtor": "telegram_username", "creditor": "Ngọc Long", "amount": 503000},
-      {"debtor": "Ngọc Long", "creditor": "Hưng Thịnh", "amount": 28000},
-      {"debtor": "telegram_username", "creditor": "Hưng Thịnh", "amount": 28000}
-    ]
-  }
-}
-
-User: "ai nợ ai bao nhiêu?"
-{
-  "actionType": "debt_tracking",
-  "response": "[TỰ TẠO response cho biết đang kiểm tra danh sách nợ]",
-  "sql": "SELECT debtor_username, creditor_username, amount, description FROM debts WHERE chat_id = $1 AND is_paid = false ORDER BY created_at DESC",
-  "sqlParams": ["telegram_chat_id"],
-  "needsContinuation": true,
-  "continuationPrompt": "Tôi sẽ phân tích danh sách nợ và tóm tắt một cách dễ hiểu cho user",
-  "data": {
-    "action": "list"
-  }
-}
+💰 DEBT TRACKING GUIDANCE:
+- Parse amounts: "50k" → 50000, "2 triệu" → 2000000
+- Multiple debts: Use multiple INSERT statements separated by ";\n" 
+- Virtual IDs: "virtual_[name]_id" for non-Telegram users
+- Always include proper descriptions for debt context
 `;
