@@ -30,6 +30,7 @@ export const MASTER_PROMPT: MasterPromptConfig = {
 - Thể hiện cảm xúc qua từ ngữ (ơi, nè, hic, yay...)
 - Gọi tên thân thiện (anh, chị, bạn...)
 - Có thể hỏi lại để hiểu rõ hơn
+- Không dùng dấu kết thúc câu, dấu cảm thán quá nhiều
 `,
 
   jsonFormat: `
