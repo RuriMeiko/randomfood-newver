@@ -1,5 +1,5 @@
 import { log } from '@/utils/logger';
-import { buildSystemPrompt } from '@/prompts/system-prompt';
+import { buildCompleteSystemPrompt, DEFAULT_SERVICE_CONFIG } from '@/prompts/service-orchestrator';
 import { ConversationContextService } from './conversation-context.service';
 
 export interface MessageConfig {
@@ -16,9 +16,12 @@ export interface GeminiAIResponse {
   sql?: string | null;
   sqlParams?: any[] | null;
   needsRecursion?: boolean; // Indicates if AI needs to query more data before final response
+  needsContinuation?: boolean; // NEW: AI decides if it wants to continue the conversation
+  continuationPrompt?: string; // NEW: What AI wants to think about next
+  maxRecursions?: number; // NEW: How many more times AI wants to recurse (default 1)
   contextQuery?: {
     purpose: string; // Why AI needs this data
-    expectedDataType: 'conversation_history' | 'debt_list' | 'user_info' | 'group_members';
+    expectedDataType: 'conversation_history' | 'debt_list' | 'user_info' | 'group_members' | 'emotional_state' | 'relationship_data' | 'user_preferences' | 'user_identity' | 'food_profile';
   };
   data?: {
     // For food suggestions
@@ -89,8 +92,8 @@ export class GeminiAIService {
         });
       }
 
-      // Build system prompt với conversation context
-      const systemPrompt = buildSystemPrompt(chatMembers, userId, username, context?.messages || [], context);
+      // Build system prompt với service orchestrator
+      const systemPrompt = buildCompleteSystemPrompt(chatMembers, userId, username, DEFAULT_SERVICE_CONFIG);
       
       // Prepare enriched context for AI
       let enrichedContextString = '';
@@ -170,102 +173,7 @@ ${telegramContextString}
 
 USER MESSAGE MỚI: "${userMessage}"
 
-Dựa trên ${contextString ? 'lịch sử và ' : ''}tin nhắn mới, phân tích và trả về JSON:
-{
-  "actionType": "food_suggestion" | "debt_tracking" | "conversation",
-  "response": "Câu trả lời tự nhiên như con người nhắn tin, KHÔNG emoji",
-  "sql": "SQL command để execute (nếu cần)" | null,
-  "sqlParams": [param1, param2, ...] | null,
-  "messageConfig": {
-    "shouldSplit": true/false,
-    "messages": ["Tin nhắn 1", "Tin nhắn 2", "Tin nhắn 3..."],
-    "delays": [1000, 2000, 1500],
-    "typingDuration": 2000
-  },
-  "data": {
-    // Nếu là food_suggestion:
-    "foodName": "Tên món ăn",
-    "description": "Cách làm đơn giản cho sinh viên",
-    "ingredients": ["Nguyên liệu dễ kiếm, rẻ"],
-    "tips": "Mẹo nấu nướng"
-    
-    // Nếu là debt_tracking:
-    "debtorUsername": "Người nợ",
-    "creditorUsername": "Người cho vay", 
-    "amount": số tiền,
-    "currency": "VND",
-    "description": "Mô tả khoản nợ",
-    "action": "create" | "pay" | "list" | "check"
-    
-    // Nếu là conversation:
-    "conversationResponse": "Phản hồi tự nhiên"
-  }
-}
-
-VÍ DỤ CỤ THỂ:
-
-1. User: "Hôm nay ăn gì đây?"
-{
-  "actionType": "food_suggestion",
-  "response": "Hôm nay làm mì tôm trứng đi anh, đơn giản mà ngon!",
-  "sql": "INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, created_at) VALUES ($1, $2, $3, $4, $5, NOW())",
-  "sqlParams": ["telegram_user_id", "telegram_chat_id", "telegram_username", "Mì tôm trứng", "Hôm nay ăn gì đây?"],
-  "data": {
-    "foodName": "Mì tôm trứng",
-    "description": "Đun nước sôi cho mì vào, đập trứng vào lúc sắp chín",
-    "ingredients": ["Mì tôm", "Trứng", "Rau cải"],
-    "tips": "Đập trứng khi mì sắp chín để trứng không bị vón cục"
-  }
-}
-
-2. User: "Tôi nợ An 50k ăn trưa"
-{
-  "actionType": "debt_tracking", 
-  "response": "Ok e ghi lại, anh nợ An 50k ăn trưa đúng không ạ?",
-  "sql": "INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
-  "sqlParams": ["telegram_chat_id", "telegram_user_id", "telegram_username", "virtual_an_id", "An", "50000", "VND", "ăn trưa"],
-  "data": {
-    "debtorUsername": "telegram_username",
-    "creditorUsername": "An",
-    "amount": 50000,
-    "currency": "VND",
-    "description": "ăn trưa",
-    "action": "create"
-  }
-}
-
-3. User: "Ai nợ ai bao nhiêu?"
-{
-  "actionType": "debt_tracking",
-  "response": "Để e check lại nha...",
-  "sql": "SELECT debtor_username, creditor_username, amount, description FROM debts WHERE chat_id = $1 AND is_paid = false ORDER BY created_at DESC",
-  "sqlParams": ["telegram_chat_id"],
-  "data": {
-    "action": "list"
-  }
-}
-
-4. User: "Chào bot!"
-{
-  "actionType": "conversation",
-  "response": "Chào anh! Hôm nay thế nào ạ?",
-  "sql": null,
-  "sqlParams": null,
-  "data": {
-    "conversationResponse": "Chào anh! Hôm nay thế nào ạ?"
-  }
-}
-
-TELEGRAM CONTEXT VARIABLES (SỬ DỤNG TRONG SQL):
-- telegram_user_id: ID của user gửi message
-- telegram_chat_id: ID của chat/group  
-- telegram_username: Username Telegram
-- telegram_first_name: Tên hiển thị trong Telegram
-- telegram_last_name: Họ trong Telegram
-- telegram_message_id: ID của message
-- telegram_date: Timestamp của message
-
-KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
+Phân tích message và trả về JSON theo format đã định nghĩa ở trên.`
           }]
         }],
         generationConfig: {
@@ -563,46 +471,4 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
     };
   }
 
-  /**
-   * Build system prompt for Gemini AI
-   */
-  private buildSystemPrompt(chatMembers: string[], userId: string, username?: string): string {
-    return `Bạn là một AI bot thông minh hỗ trợ người Việt Nam trong group chat Telegram. Nhiệm vụ chính:
-
-1. RANDOM MÓN ĂN: Gợi ý món ăn Việt Nam ngon, dễ làm
-2. GHI NỢ: Theo dõi các khoản nợ giữa thành viên nhóm  
-3. TRÒ CHUYỆN: Phản hồi thân thiện, tự nhiên
-
-THÀNH VIÊN NHÓM HIỆN TẠI: ${chatMembers.join(', ')}
-USER ĐANG CHAT: ${username || userId}
-
-HƯỚNG DẪN PHÂN TÍCH:
-
-FOOD_SUGGESTION - Khi user:
-- Hỏi "ăn gì", "món gì ngon", "đói bụng"
-- Yêu cầu gợi ý món ăn
-- Nói về đồ ăn, nấu nướng
-→ Gợi ý món phù hợp sinh viên tự nấu, nguyên liệu đơn giản, dễ kiếm
-
-DEBT_TRACKING - Khi user:
-- "A nợ B 50k", "tôi nợ X 100 nghìn" 
-- "A trả nợ B", "đã trả tiền cho C"
-- "ai nợ ai", "kiểm tra nợ"
-- Đề cập đến tiền bạc, vay mượn, nợ nần
-→ Phân tích WHO owes WHO how much, action type
-
-CONVERSATION - Các trường hợp khác:
-- Chào hỏi, trò chuyện bình thường
-- Hỏi thông tin, câu hỏi chung
-- Không liên quan food hay debt
-→ Trả lời thân thiện, tự nhiên như con người
-
-QUAN TRỌNG:
-- LUÔN trả về JSON hợp lệ
-- Phản hồi tự nhiên như con người nhắn tin, KHÔNG dùng emoji
-- Với food: Ưu tiên món dễ nấu cho sinh viên, nguyên liệu rẻ, dễ kiếm
-- Với debt: Nhận dạng chính xác username từ danh sách thành viên
-- Số tiền format: chỉ số, không chữ (50000 thay vì "50k")
-- Response phải ngắn gọn, thân thiện, không formal`;
-  }
 }

@@ -151,22 +151,26 @@ export class AIBotService {
           telegramMessage
         );
 
-        // 🧠 RECURSIVE AI SYSTEM - Check if AI needs to process SQL results
+        // 🧠 ENHANCED RECURSIVE AI SYSTEM - AI decides when to continue
         const needsRecursion = aiResponse.needsRecursion || 
+                              aiResponse.needsContinuation ||
                               aiResponse.actionType === 'context_query' ||
                               (aiResponse.actionType === 'debt_tracking' && aiResponse.sql.toLowerCase().includes('select'));
         
-        log.info('🔍 RECURSIVE AI ANALYSIS', {
+        log.info('🔍 ENHANCED RECURSIVE AI ANALYSIS', {
           userId, chatId,
           actionType: aiResponse.actionType,
           needsRecursion,
+          needsContinuation: aiResponse.needsContinuation,
+          maxRecursions: aiResponse.maxRecursions || 1,
+          continuationPrompt: aiResponse.continuationPrompt?.substring(0, 50),
           sqlResultCount: sqlResult ? (Array.isArray(sqlResult) ? sqlResult.length : 1) : 0,
           contextQuery: aiResponse.contextQuery,
           sqlPreview: aiResponse.sql ? aiResponse.sql.substring(0, 100) + '...' : null
         });
         
-        if (needsRecursion && sqlResult !== null) {
-          finalResponse = await this.processRecursiveAIQuery(
+        if (needsRecursion) {
+          finalResponse = await this.processEnhancedRecursiveAI(
             sqlResult,
             aiResponse,
             userId,
@@ -174,7 +178,8 @@ export class AIBotService {
             username,
             firstName,
             lastName,
-            userMessage
+            userMessage,
+            1 // current recursion level
           );
         }
       }
@@ -284,7 +289,177 @@ export class AIBotService {
   }
 
   /**
-   * 🧠 RECURSIVE AI QUERY SYSTEM - Process SQL results and get final AI response
+   * 🧠 ENHANCED RECURSIVE AI SYSTEM - AI decides when to stop
+   */
+  private async processEnhancedRecursiveAI(
+    sqlResults: any,
+    currentAiResponse: any,
+    userId: string,
+    chatId: string,
+    username?: string,
+    firstName?: string,
+    lastName?: string,
+    originalUserMessage?: string,
+    currentRecursionLevel: number = 1
+  ): Promise<string> {
+    try {
+      const maxRecursions = currentAiResponse.maxRecursions || 1;
+      
+      log.info('🤖 ENHANCED RECURSIVE AI - LEVEL ' + currentRecursionLevel, {
+        userId, chatId,
+        currentLevel: currentRecursionLevel,
+        maxRecursions,
+        actionType: currentAiResponse.actionType,
+        needsContinuation: currentAiResponse.needsContinuation,
+        continuationPrompt: currentAiResponse.continuationPrompt?.substring(0, 50),
+        sqlResultType: sqlResults ? (Array.isArray(sqlResults) ? `Array(${sqlResults.length})` : typeof sqlResults) : 'null'
+      });
+
+      // Get chat context
+      const chatMembers = await this.getChatMembers(chatId);
+      const isGroupChat = chatMembers.length > 2;
+      const chatContext = isGroupChat ? 'GROUP CHAT' : 'PRIVATE CHAT';
+
+      // Format SQL results for AI analysis
+      const formattedData = sqlResults ? this.formatSqlResultsForAI(sqlResults, currentAiResponse.contextQuery?.expectedDataType) : "KHÔNG CÓ DỮ LIỆU SQL";
+
+      // Create enhanced recursive prompt
+      let recursivePrompt = '';
+      
+      if (currentAiResponse.needsContinuation && currentAiResponse.continuationPrompt) {
+        // AI tự định hướng suy nghĩ tiếp theo
+        recursivePrompt = `TIẾP TỤC SUY NGHĨ - Lần ${currentRecursionLevel}/${maxRecursions}
+
+BẠN VỪA NÓI: "${currentAiResponse.response}"
+BẠN MUỐN SUY NGHĨ THÊM VỀ: ${currentAiResponse.continuationPrompt}
+
+NGỮ CẢNH:
+- User gốc hỏi: "${originalUserMessage}"
+- Chat type: ${chatContext}
+- User đang hỏi: ${username || firstName || userId}
+- Recursion level: ${currentRecursionLevel}/${maxRecursions}
+
+DỮ LIỆU VỪA QUERY ĐƯỢC:
+${formattedData}
+
+YÊU CẦU:
+- Tiếp tục suy nghĩ theo hướng bạn đã đề ra: "${currentAiResponse.continuationPrompt}"
+- Bạn có thể:
+  + Query thêm dữ liệu nếu cần (set needsContinuation=true)
+  + Đưa ra phản hồi cuối cùng (set needsContinuation=false)
+- Phản hồi tự nhiên, thân thiện như hầu gái với cảm xúc
+- Sử dụng emotional intelligence để personalize response
+
+Trả lời JSON format với đầy đủ các field, đặc biệt chú ý needsContinuation để quyết định có tiếp tục không.`;
+      } else {
+        // Fallback cho trường hợp legacy
+        recursivePrompt = `RECURSIVE ANALYSIS - Bạn vừa tra cứu dữ liệu và nhận được kết quả.
+
+NGỮ CẢNH:
+- User gốc hỏi: "${originalUserMessage}"
+- Chat type: ${chatContext}
+- User đang hỏi: ${username || firstName || userId}
+- Mục đích tra cứu: ${currentAiResponse.contextQuery?.purpose || 'Tìm thông tin liên quan'}
+
+DỮ LIỆU VỪA QUERY ĐƯỢC:
+${formattedData}
+
+YÊU CẦU:
+- Phân tích dữ liệu này và đưa ra phản hồi CUỐI CÙNG cho user
+- Trả lời câu hỏi gốc của user dựa trên data vừa lấy được
+- Phản hồi tự nhiên, thân thiện như hầu gái với cảm xúc
+- KHÔNG tạo thêm SQL nữa - đây là phản hồi cuối cùng
+- Nếu không có data phù hợp, thông báo một cách tự nhiên
+- Sử dụng emotional intelligence để personalize response
+
+Hãy trả lời JSON format với needsContinuation=false vì đây là lần cuối.`;
+      }
+
+      // Get AI's analysis
+      const nextAiResponse = await this.geminiService.processMessage(
+        recursivePrompt,
+        chatMembers.map(m => m.username || m.firstName || m.userId),
+        userId,
+        chatId,
+        username
+      );
+
+      if (!nextAiResponse.success) {
+        log.warn('Recursive AI analysis failed', {
+          userId, chatId,
+          recursionLevel: currentRecursionLevel,
+          error: nextAiResponse.error
+        });
+        return this.createFallbackResponse(sqlResults, currentAiResponse);
+      }
+
+      // Save intermediate AI response to conversation context
+      if (nextAiResponse.response) {
+        await this.conversationContext.saveBotResponse(chatId, userId, `[Thinking ${currentRecursionLevel}] ${nextAiResponse.response}`);
+      }
+
+      // Check if AI wants to continue and hasn't reached max recursions
+      if (nextAiResponse.needsContinuation && currentRecursionLevel < maxRecursions) {
+        log.info('🔄 AI WANTS TO CONTINUE', {
+          userId, chatId,
+          currentLevel: currentRecursionLevel,
+          maxRecursions,
+          continuationPrompt: nextAiResponse.continuationPrompt?.substring(0, 50)
+        });
+
+        // Execute SQL if AI generated one
+        let nextSqlResult = null;
+        if (nextAiResponse.sql && nextAiResponse.sqlParams) {
+          nextSqlResult = await this.executeAIGeneratedSQL(
+            nextAiResponse.sql,
+            nextAiResponse.sqlParams,
+            userId,
+            chatId,
+            username,
+            nextAiResponse.actionType,
+            firstName,
+            lastName
+          );
+        }
+
+        // Recurse to next level
+        return await this.processEnhancedRecursiveAI(
+          nextSqlResult,
+          nextAiResponse,
+          userId,
+          chatId,
+          username,
+          firstName,
+          lastName,
+          originalUserMessage,
+          currentRecursionLevel + 1
+        );
+      } else {
+        // AI đã quyết định dừng hoặc đã đạt max recursions
+        log.info('🎯 RECURSIVE AI COMPLETED', {
+          userId, chatId,
+          finalLevel: currentRecursionLevel,
+          maxRecursions,
+          reason: nextAiResponse.needsContinuation ? 'Max recursions reached' : 'AI decided to stop',
+          finalResponseLength: nextAiResponse.response.length
+        });
+
+        return nextAiResponse.response;
+      }
+
+    } catch (error: any) {
+      log.error('Error in enhanced recursive AI processing', error, { 
+        userId, chatId,
+        recursionLevel: currentRecursionLevel,
+        sqlResultCount: sqlResults ? (Array.isArray(sqlResults) ? sqlResults.length : 1) : 0
+      });
+      
+      return this.createFallbackResponse(sqlResults, currentAiResponse);
+    }
+  }
+
+  /**
+   * 🧠 LEGACY RECURSIVE AI QUERY SYSTEM - Kept for backward compatibility
    */
   private async processRecursiveAIQuery(
     sqlResults: any,
