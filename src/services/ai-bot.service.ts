@@ -228,7 +228,7 @@ export class AIBotService {
       log.error('Error processing user message', error, { userId, chatId, userMessage });
       return {
         success: false,
-        response: 'Có lỗi xảy ra khi xử lý tin nhắn của bạn. Vui lòng thử lại.',
+        response: Math.random() > 0.5 ? 'Lỗi rồi a ơi, thử lại đi' : 'Có bug gì đó, retry nha',
         actionType: 'error',
         error: error.message,
         messageConfig: undefined
@@ -237,7 +237,7 @@ export class AIBotService {
   }
 
   /**
-   * 🔧 Execute AI-generated SQL safely with parameter replacement
+   * 🔧 Execute AI-generated SQL safely with parameter replacement - supports multiple statements
    */
   private async executeAIGeneratedSQL(
     sql: string, 
@@ -264,19 +264,62 @@ export class AIBotService {
         return param;
       });
 
-      // Execute the SQL
-      const result = await this.database.query(sql, processedParams);
+      // Check if this is multiple SQL statements (separated by ;\n)
+      const sqlStatements = sql.split(';\n').filter(s => s.trim().length > 0);
+      
+      if (sqlStatements.length > 1) {
+        log.info('🔄 EXECUTING MULTIPLE SQL STATEMENTS', { 
+          userId, chatId, actionType,
+          statementCount: sqlStatements.length,
+          sqlPreview: sql.substring(0, 100) + '...'
+        });
 
-      log.info('AI-generated SQL executed', { 
-        userId, 
-        chatId, 
-        actionType,
-        sqlPreview: sql.substring(0, 50) + '...',
-        paramCount: processedParams.length,
-        rowsAffected: Array.isArray(result) ? result.length : result.rowCount || 0
-      });
+        const results = [];
+        let paramIndex = 0;
 
-      return result;
+        for (let i = 0; i < sqlStatements.length; i++) {
+          const statement = sqlStatements[i].trim();
+          
+          // Count parameters in this statement  
+          const paramCount = (statement.match(/\$\d+/g) || []).length;
+          const stmtParams = processedParams.slice(paramIndex, paramIndex + paramCount);
+          
+          log.info(`Executing statement ${i + 1}/${sqlStatements.length}`, {
+            userId, chatId,
+            statement: statement.substring(0, 80) + '...',
+            paramCount,
+            paramIndex
+          });
+
+          const result = await this.database.query(statement, stmtParams);
+          results.push(result);
+          
+          paramIndex += paramCount;
+        }
+
+        log.info('✅ ALL SQL STATEMENTS EXECUTED', { 
+          userId, chatId, actionType,
+          totalStatements: sqlStatements.length,
+          totalResults: results.length,
+          totalRowsAffected: results.reduce((sum, result) => sum + (Array.isArray(result) ? result.length : result?.rowCount || 0), 0)
+        });
+
+        return results; // Return array of results
+      } else {
+        // Single SQL statement
+        const result = await this.database.query(sql, processedParams);
+
+        log.info('AI-generated SQL executed', { 
+          userId, 
+          chatId, 
+          actionType,
+          sqlPreview: sql.substring(0, 50) + '...',
+          paramCount: processedParams.length,
+          rowsAffected: Array.isArray(result) ? result.length : result.rowCount || 0
+        });
+
+        return result;
+      }
     } catch (error: any) {
       log.error('Error executing AI-generated SQL', error, { 
         userId, 
@@ -660,21 +703,34 @@ ${sqlResults.map((item, idx) =>
    * 🔄 Create fallback response when AI analysis fails
    */
   private createFallbackResponse(sqlResults: any, originalAiResponse: any): string {
-    if (!sqlResults || (Array.isArray(sqlResults) && sqlResults.length === 0)) {
-      return "E không tìm thấy thông tin nào liên quan đến câu hỏi của a ơi.";
-    }
-
+    // Generate dynamic fallback based on context instead of hardcoding
+    const resultCount = Array.isArray(sqlResults) ? sqlResults.length : (sqlResults ? 1 : 0);
     const dataType = originalAiResponse.contextQuery?.expectedDataType;
     
-    switch (dataType) {
-      case 'debt_list':
-        return `E tìm được ${Array.isArray(sqlResults) ? sqlResults.length : 1} khoản nợ, nhưng không thể phân tích chi tiết được. Bạn có thể hỏi cụ thể hơn không ạ?`;
-        
-      case 'conversation_history':
-        return `E tìm được ${Array.isArray(sqlResults) ? sqlResults.length : 1} tin nhắn liên quan, nhưng không thể tóm tắt được. Bạn thử hỏi lại nhé!`;
-        
-      default:
-        return `E tìm được ${Array.isArray(sqlResults) ? sqlResults.length : 1} kết quả, nhưng không thể phân tích được. Bạn có thể hỏi cụ thể hơn không ạ?`;
+    if (!sqlResults || resultCount === 0) {
+      // Return a simple, non-hardcoded failure message
+      return Math.random() > 0.5 
+        ? "Hmm không tìm thấy gì liên quan nè"
+        : "À không có thông tin gì hết á";
     }
+    
+    // Generate varied responses based on data type and count
+    const responseTemplates = {
+      'debt_list': [
+        `Có ${resultCount} khoản nợ nhưng không parse được, hỏi cụ thể hơn đi a`,
+        `Tìm được ${resultCount} record nợ nhưng phân tích lỗi, thử lại đi`
+      ],
+      'conversation_history': [
+        `Có ${resultCount} tin nhắn cũ nhưng tóm tắt không được, hỏi khác đi`,
+        `${resultCount} messages nhưng analyze fail, câu hỏi khác nhé`
+      ],
+      'default': [
+        `Tìm được ${resultCount} kết quả nhưng xử lý lỗi`,
+        `Có ${resultCount} records nhưng parse không được`
+      ]
+    };
+    
+    const templates = responseTemplates[dataType] || responseTemplates['default'];
+    return templates[Math.floor(Math.random() * templates.length)];
   }
 }

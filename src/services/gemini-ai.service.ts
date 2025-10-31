@@ -216,7 +216,7 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
         });
         return {
           actionType: 'error',
-          response: 'Xin lỗi, có lỗi xảy ra khi xử lý tin nhắn của bạn.',
+          response: Math.random() > 0.5 ? 'Ơi lỗi rồi, thử lại đi a' : 'Có vấn đề gì đó, retry xem',
           success: false,
           error: `API Error: ${response.status}`
         };
@@ -228,7 +228,7 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
         log.error('No candidates in Gemini response', undefined, { response: data, processingTime });
         return {
           actionType: 'error',
-          response: 'Không thể xử lý tin nhắn của bạn lúc này.',
+          response: Math.random() > 0.5 ? 'AI không rep gì hết á' : 'Lỗi AI rồi, thử lại nha',
           success: false,
           error: 'No AI response generated'
         };
@@ -240,7 +240,7 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
         log.error('Empty response from Gemini', undefined, { data, processingTime });
         return {
           actionType: 'error',
-          response: 'Phản hồi từ AI bị trống.',
+          response: Math.random() > 0.5 ? 'AI rep trống không à' : 'Response rỗng, lỗi rồi',
           success: false,
           error: 'Empty AI response'
         };
@@ -358,7 +358,7 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
       
       return {
         actionType: 'error',
-        response: 'Có lỗi xảy ra khi kết nối với AI. Vui lòng thử lại sau.',
+        response: Math.random() > 0.5 ? 'Connect AI lỗi rồi, thử lại đi' : 'Mạng có vấn đề, retry nha',
         success: false,
         error: error.message
       };
@@ -425,7 +425,6 @@ Phân tích message và trả về JSON theo format đã định nghĩa ở trê
       return {
         shouldSplit: true,
         messages: [
-          'Để em check lại...',
           ...mainContent
         ],
         delays: Array(messageCount).fill(0).map(() => 

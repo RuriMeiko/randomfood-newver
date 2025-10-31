@@ -82,8 +82,16 @@ export function buildCompleteSystemPrompt(
 1. Đọc user message
 2. Xác định service phù hợp nhất (debt/food/conversation/context)
 3. Áp dụng logic của service đó
-4. Trả về JSON đúng format
-5. Đảm bảo SQL và data structure chính xác
+4. Tự do sáng tạo SQL queries phù hợp (SELECT, JOIN, aggregation, etc.)
+5. Trả về JSON đúng format
+6. Đảm bảo SQL và data structure chính xác
+
+💡 SQL CREATIVITY EXAMPLES:
+- "ai nợ nhiều nhất?" → SELECT debtor_username, SUM(amount) FROM debts GROUP BY debtor_username ORDER BY SUM(amount) DESC
+- "tổng nợ của group?" → SELECT SUM(amount) FROM debts WHERE chat_id = $1 AND is_paid = false
+- "lịch sử nợ 3 tháng?" → SELECT * FROM debts WHERE created_at >= NOW() - INTERVAL '3 months'
+- "user nào ăn đa dạng nhất?" → SELECT user_id, COUNT(DISTINCT suggestion) FROM food_suggestions GROUP BY user_id
+- "món ăn phổ biến?" → SELECT suggestion, COUNT(*) FROM food_suggestions GROUP BY suggestion ORDER BY COUNT(*) DESC
 
 ⚡ PRIORITY ORDER:
 1. DEBT_TRACKING - nếu mention tiền, nợ, trả
