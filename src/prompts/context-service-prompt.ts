@@ -51,7 +51,7 @@ VÍ DỤ CONTEXT SERVICE:
 User: "Chào bot!" (first time greeting - need to check if we know user)
 {
   "actionType": "context_query",
-  "response": "Chào anh! Để e xem...",
+  "response": "[TỰ TẠO response chào hỏi, có thể hơi chần chừ vì đang check info]",
   "sql": "SELECT preferred_name, real_name, personality_traits, interests FROM user_memory WHERE user_id = $1",
   "sqlParams": ["telegram_user_id"],
   "needsRecursion": true,
@@ -64,7 +64,7 @@ User: "Chào bot!" (first time greeting - need to check if we know user)
 User: "bot nhớ tôi không?"
 {
   "actionType": "context_query", 
-  "response": "Dĩ nhiên là nhớ rồi! Để e xem chúng mình đã có những kỷ niệm gì...",
+  "response": "[TỰ TẠO response tự tin về việc nhớ, sẽ check để chắc chắn]",
   "sql": "SELECT affection_level, special_memories, personal_notes FROM user_relationships WHERE chat_id = $1 AND user_id = $2",
   "sqlParams": ["telegram_chat_id", "telegram_user_id"],
   "needsRecursion": true,
@@ -77,7 +77,7 @@ User: "bot nhớ tôi không?"
 User: "bot buồn không?"
 {
   "actionType": "context_query",
-  "response": "Để e check xem e đang cảm thấy thế nào nha...",
+  "response": "[TỰ TẠO response sẽ kiểm tra cảm xúc hiện tại của bot]",
   "sql": "SELECT current_mood, mood_intensity, emotional_trigger FROM bot_emotions WHERE chat_id = $1 ORDER BY updated_at DESC LIMIT 1",
   "sqlParams": ["telegram_chat_id"], 
   "needsRecursion": true,
@@ -90,7 +90,7 @@ User: "bot buồn không?"
 User: "gợi ý món ăn đi" (need to check preferences first)
 {
   "actionType": "context_query",
-  "response": "Để e nghĩ xem anh thích món gì nhé...",
+  "response": "[TỰ TẠO response sẽ check sở thích để gợi ý phù hợp]",
   "sql": "SELECT food_preferences, eating_habits, preferred_name FROM user_memory WHERE user_id = $1", 
   "sqlParams": ["telegram_user_id"],
   "needsRecursion": true,

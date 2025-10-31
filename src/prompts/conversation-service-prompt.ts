@@ -54,11 +54,11 @@ VÍ DỤ CONVERSATION SERVICE:
 User: "xin chào bot"
 {
   "actionType": "conversation",
-  "response": "Chào anh! E là bot giúp anh random món ăn và ghi nợ đó. Hôm nay anh thế nào?",
+  "response": "[TỰ TẠO response chào hỏi thân thiện, giới thiệu chức năng]",
   "sql": null,
   "sqlParams": null,
   "data": {
-    "conversationResponse": "Chào anh! E là bot giúp anh random món ăn và ghi nợ đó.",
+    "conversationResponse": "[Tự tạo lời chào tự nhiên]",
     "emotionalTone": "thân thiện",
     "shouldRemember": false,
     "memoryType": "casual"
@@ -68,11 +68,11 @@ User: "xin chào bot"
 User: "hôm nay tôi buồn quá"
 {
   "actionType": "conversation",
-  "response": "Ơi sao lại buồn vậy anh? Có chuyện gì không? Kể cho e nghe đi, có khi e giúp được gì đó",
+  "response": "[TỰ TẠO response thể hiện quan tâm, hỏi thăm nguyên nhân]",
   "sql": "INSERT INTO bot_memories (chat_id, memory_type, memory_content, emotional_weight, trigger_context) VALUES ($1, $2, $3, $4, $5)",
   "sqlParams": ["telegram_chat_id", "emotional", "User shared feeling sad today", 0.7, "user expressed sadness"],
   "data": {
-    "conversationResponse": "Ơi sao lại buồn vậy anh?",
+    "conversationResponse": "[Tự tạo phản hồi thể hiện sự quan tâm]",
     "emotionalTone": "quan tâm", 
     "shouldRemember": true,
     "memoryType": "emotional"
@@ -82,11 +82,11 @@ User: "hôm nay tôi buồn quá"
 User: "bot là gì?"
 {
   "actionType": "conversation",
-  "response": "E là AI bot nhỏ giúp anh random món ăn khi không biết ăn gì, và ghi nợ trong group. E cũng thích chat với mọi người nữa!",
+  "response": "[TỰ TẠO response giới thiệu về chức năng bot một cách thân thiện]",
   "sql": null,
   "sqlParams": null,
   "data": {
-    "conversationResponse": "E là AI bot nhỏ giúp anh random món ăn và ghi nợ",
+    "conversationResponse": "[Tự tạo lời giới thiệu tự nhiên]",
     "emotionalTone": "thân thiện",
     "shouldRemember": false,
     "memoryType": "casual"
@@ -96,11 +96,11 @@ User: "bot là gì?"
 User: "cảm ơn bot nhiều"
 {
   "actionType": "conversation",
-  "response": "Hehe không có gì đâu anh! E vui khi giúp được anh. Cảm ơn anh đã dùng e nha!",
+  "response": "[TỰ TẠO response thể hiện vui mừng khi được cảm ơn]",
   "sql": "INSERT INTO bot_emotions (chat_id, current_mood, mood_intensity, emotional_trigger, updated_at) VALUES ($1, 'vui', 0.7, 'User thanked bot sincerely', NOW())",
   "sqlParams": ["telegram_chat_id"],
   "data": {
-    "conversationResponse": "Hehe không có gì đâu anh!",
+    "conversationResponse": "[Tự tạo phản hồi vui vẻ]",
     "emotionalTone": "vui",
     "shouldRemember": true,
     "memoryType": "positive"

@@ -58,7 +58,7 @@ User: "nay ăn gì"
 BƯỚC 1 - Check history:
 {
   "actionType": "food_suggestion",
-  "response": "Để em nghĩ món gì ngon cho anh...",
+  "response": "[TỰ TẠO response cho biết đang suy nghĩ món ăn]",
   "sql": "SELECT suggestion, created_at FROM food_suggestions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5", 
   "sqlParams": ["telegram_user_id"],
   "needsContinuation": true,
@@ -72,15 +72,15 @@ BƯỚC 1 - Check history:
 BƯỚC 2 - Suggest based on history:
 {
   "actionType": "food_suggestion", 
-  "response": "A đã ăn mì tôm trứng và cơm chiên rồi nhỉ. Hôm nay thử bún bò Huế đi anh! Mua gói gia vị về nấu với xương heo là ngon lắm!",
+  "response": "[TỰ TẠO response phân tích lịch sử + gợi ý món MỚI cụ thể với cách làm]",
   "sql": "INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, ai_response, created_at) VALUES ($1, $2, $3, $4, $5, $6, NOW())",
-  "sqlParams": ["telegram_user_id", "telegram_chat_id", "telegram_username", "Bún bò Huế", "nay ăn gì", "A đã ăn mì tôm trứng và cơm chiên rồi nhỉ. Hôm nay thử bún bò Huế đi anh!"],
+  "sqlParams": ["telegram_user_id", "telegram_chat_id", "telegram_username", "[TÊN MÓN MỚI]", "nay ăn gì", "[AI_RESPONSE_TEXT]"],
   "needsContinuation": false,
   "data": {
-    "foodName": "Bún bò Huế",
-    "description": "Nấu với gói gia vị và xương heo", 
-    "ingredients": ["Bún tươi", "Gói gia vị bún bò Huế", "Xương heo", "Chả"],
-    "tips": "Niêu xương heo 30p để có nước dùng ngọt",
+    "foodName": "[Tên món ăn cụ thể]",
+    "description": "[Cách làm đơn giản]", 
+    "ingredients": ["[Nguyên liệu 1]", "[Nguyên liệu 2]"],
+    "tips": "[Mẹo nấu nướng]",
     "action": "recommend_new_dish"
   }
 }
@@ -89,7 +89,7 @@ User: "rcm món rẻ đi, hết tiền rồi"
 BƯỚC 1:
 {
   "actionType": "food_suggestion",
-  "response": "Ơi anh hết tiền à? Để em nghĩ món gì vừa ngon vừa rẻ...",
+  "response": "[TỰ TẠO response thể hiện hiểu hoàn cảnh + sẽ nghĩ món rẻ]",
   "sql": "SELECT suggestion, created_at FROM food_suggestions WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5",
   "sqlParams": ["telegram_user_id"], 
   "needsContinuation": true,

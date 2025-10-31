@@ -71,44 +71,44 @@ VÍ DỤ MEMORY SERVICE:
 User: "tên thật của tôi là Nguyễn Văn An"
 {
   "actionType": "conversation",
-  "response": "Dạ e nhớ rồi! Tên thật của anh là Nguyễn Văn An nhé!",
+  "response": "[TỰ TẠO response thân thiện, xác nhận đã nhớ tên]",
   "sql": "INSERT INTO user_memory (user_id, real_name, aliases, created_by) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO UPDATE SET real_name = $2, aliases = COALESCE(user_memory.aliases, '[]') || $3, last_updated = NOW()",
   "sqlParams": ["telegram_user_id", "Nguyễn Văn An", "[\"telegram_username\"]", "telegram_user_id"],
   "data": {
-    "conversationResponse": "Dạ e nhớ rồi! Tên thật của anh là Nguyễn Văn An nhé!"
+    "conversationResponse": "[Tự tạo phản hồi tự nhiên]"
   }
 }
 
 User: "tôi không thích ăn cay"
 {
   "actionType": "conversation", 
-  "response": "Dạ e ghi nhớ rồi! Anh không thích ăn cay. E sẽ gợi ý món không cay cho anh từ giờ nhé!",
+  "response": "[TỰ TẠO response xác nhận đã ghi nhớ sở thích ăn uống]",
   "sql": "INSERT INTO user_memory (user_id, food_preferences, created_by) VALUES ($1, $2, $3) ON CONFLICT (user_id) DO UPDATE SET food_preferences = COALESCE(user_memory.food_preferences, '{}') || $2, last_updated = NOW()",
   "sqlParams": ["telegram_user_id", "{\"dislikes\": [\"cay\"], \"dietary_restrictions\": [\"no_spicy\"]}", "telegram_user_id"],
   "data": {
-    "conversationResponse": "Dạ e ghi nhớ rồi! Anh không thích ăn cay."
+    "conversationResponse": "[Tự tạo phản hồi phù hợp]"
   }
 }
 
 User: "bot giỏi quá!"
 {
   "actionType": "conversation",
-  "response": "Hehe cảm ơn anh! E vui lắm nè! Anh khen e e sẽ nhớ mãi đó!",
+  "response": "[TỰ TẠO response vui vẻ, cảm ơn user và thể hiện cảm xúc tích cực]",
   "sql": "INSERT INTO bot_emotions (chat_id, current_mood, mood_intensity, emotional_trigger, updated_at) VALUES ($1, 'vui', 0.8, 'User compliment made bot happy', NOW())",
   "sqlParams": ["telegram_chat_id"],
   "data": {
-    "conversationResponse": "Hehe cảm ơn anh! E vui lắm nè!"
+    "conversationResponse": "[Tự tạo phản hồi thể hiện vui mừng]"
   }
 }
 
 User: "gọi tôi là Minh đi"
 {
   "actionType": "conversation",
-  "response": "Dạ được ạ! E sẽ gọi anh là Minh từ giờ nhé!",
+  "response": "[TỰ TẠO response xác nhận sẽ gọi theo tên mới]",
   "sql": "INSERT INTO user_memory (user_id, preferred_name, aliases, created_by) VALUES ($1, $2, $3, $4) ON CONFLICT (user_id) DO UPDATE SET preferred_name = $2, aliases = COALESCE(user_memory.aliases, '[]') || $3, last_updated = NOW()",
   "sqlParams": ["telegram_user_id", "Minh", "[\"Minh\"]", "telegram_user_id"],
   "data": {
-    "conversationResponse": "Dạ được ạ! E sẽ gọi anh là Minh từ giờ nhé!"
+    "conversationResponse": "[Tự tạo phản hồi xác nhận]"
   }
 }
 `;
