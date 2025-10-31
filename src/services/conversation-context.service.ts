@@ -84,22 +84,24 @@ export class ConversationContextService {
   }> {
     try {
       // Lấy tin nhắn gần đây
-      const messages = await this.database.query(
+      const messagesResult = await this.database.query(
         `SELECT * FROM conversation_messages 
          WHERE chat_id = $1 AND user_id = $2 
          ORDER BY timestamp DESC 
          LIMIT 50`,
         [chatId, userId]
-      ) as ConversationMessage[];
+      );
+      const messages = Array.isArray(messagesResult) ? messagesResult as ConversationMessage[] : [];
 
       // Lấy summaries nếu có
-      const summaries = await this.database.query(
+      const summariesResult = await this.database.query(
         `SELECT * FROM conversation_summaries 
          WHERE chat_id = $1 AND user_id = $2 
          ORDER BY end_time DESC 
          LIMIT 5`,
         [chatId, userId]
-      ) as ConversationSummary[];
+      );
+      const summaries = Array.isArray(summariesResult) ? summariesResult as ConversationSummary[] : [];
 
       // Tính tổng tokens
       const messageTokens = messages.reduce((sum, msg) => sum + (msg.tokenCount || 0), 0);

@@ -74,12 +74,62 @@ export class GeminiAIService {
       // Build system prompt với conversation context
       const systemPrompt = buildSystemPrompt(chatMembers, userId, username, context?.messages || []);
       
+      // Prepare enriched context for AI
+      let enrichedContextString = '';
+      if (context?.debtData) {
+        enrichedContextString += `\nDỮ LIỆU NỢ HIỆN TẠI:\n`;
+        enrichedContextString += `- Số dư của ${username}: ${context.debtData.summary.netBalance > 0 ? `+${context.debtData.summary.netBalance}k (người ta nợ bạn)` : context.debtData.summary.netBalance < 0 ? `${context.debtData.summary.netBalance}k (bạn nợ người ta)` : '0k (không nợ ai)'}\n`;
+        enrichedContextString += `- Tổng bạn nợ người khác: ${context.debtData.summary.totalOwed}k\n`;
+        enrichedContextString += `- Tổng người khác nợ bạn: ${context.debtData.summary.totalLent}k\n`;
+        
+        if (context.debtData.unpaidDebts.length > 0) {
+          enrichedContextString += `- Nợ chưa trả:\n`;
+          context.debtData.unpaidDebts.slice(0, 5).forEach((debt: any) => {
+            enrichedContextString += `  + ${debt.debtorUsername} nợ ${debt.creditorUsername} ${debt.amount}k: ${debt.description}\n`;
+          });
+        }
+      }
+      
+      if (context?.foodData) {
+        enrichedContextString += `\nLỊCH SỬ ĐỒ ĂN:\n`;
+        if (context.foodData.userHistory.length > 0) {
+          enrichedContextString += `- Món đã gợi ý cho ${username}:\n`;
+          context.foodData.userHistory.slice(0, 3).forEach((food: any) => {
+            enrichedContextString += `  + ${food.suggestion} (${new Date(food.createdAt).toLocaleDateString()})\n`;
+          });
+        }
+        if (context.foodData.chatHistory.length > 0) {
+          enrichedContextString += `- Món group đã thử gần đây:\n`;
+          context.foodData.chatHistory.slice(0, 3).forEach((food: any) => {
+            enrichedContextString += `  + ${food.suggestion} - ${food.username}\n`;
+          });
+        }
+      }
+
+      if (context?.aliasData) {
+        enrichedContextString += `\nHỆ THỐNG BIỆT DANH:\n`;
+        enrichedContextString += `- Danh sách người đã map biệt danh:\n`;
+        context.aliasData.knownAliases.slice(0, 5).forEach((alias: any) => {
+          enrichedContextString += `  + ${alias.realName}: [${alias.aliases.join(', ')}]`;
+          if (alias.confidence < 1.0) {
+            enrichedContextString += ` (confidence: ${(alias.confidence * 100).toFixed(0)}%)`;
+          }
+          enrichedContextString += `\n`;
+        });
+        enrichedContextString += `\nQUY TẮC SỬ DỤNG BIỆT DANH:\n`;
+        enrichedContextString += `- Khi đề cập người nào, dùng TÊN THẬT thay vì biệt danh\n`;
+        enrichedContextString += `- Nếu biệt danh không rõ ràng (có nhiều người), hỏi để xác nhận\n`;
+        enrichedContextString += `- Khi tạo debt record, dùng tên thật để tránh nhầm lẫn\n`;
+      }
+      
       const requestBody = {
         contents: [{
           parts: [{
             text: `${systemPrompt}
 
 ${contextString ? `LỊCH SỬ CUỘC TRÒ CHUYỆN:\n${contextString}\n` : ''}
+
+${enrichedContextString}
 
 USER MESSAGE MỚI: "${userMessage}"
 

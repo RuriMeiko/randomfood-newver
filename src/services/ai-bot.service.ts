@@ -6,8 +6,8 @@ import type {
   NewDebt, 
   ChatMember, 
   NewChatMember,
-  AiConversation,
-  NewAiConversation 
+  UserAlias,
+  NewUserAlias
 } from '@/db/schema';
 import { GeminiAIService, type GeminiAIResponse } from './gemini-ai.service';
 import { ConversationContextService } from './conversation-context.service';
@@ -65,6 +65,15 @@ export class AIBotService {
         contextStatus: context.contextStatus
       });
 
+      // Prepare enriched context for AI
+      const enrichedContext = await this.prepareEnrichedContext(
+        userMessage, 
+        chatId, 
+        userId, 
+        username, 
+        context
+      );
+
       // Process with Gemini AI
       const aiResponse = await this.geminiService.processMessage(
         userMessage, 
@@ -72,20 +81,12 @@ export class AIBotService {
         userId,
         chatId,
         username,
-        context
+        enrichedContext
       );
 
       const processingTime = Date.now() - startTime;
 
-      // Log conversation
-      await this.logConversation(
-        chatId, 
-        userId, 
-        userMessage, 
-        JSON.stringify(aiResponse), 
-        aiResponse.actionType,
-        processingTime
-      );
+      // No longer using ai_conversations table - data is stored in specialized tables
 
       if (!aiResponse.success) {
         return {
@@ -209,26 +210,114 @@ export class AIBotService {
       switch (debtData.action) {
         case 'create':
           if (debtData.debtorUsername && debtData.creditorUsername && debtData.amount) {
-            // Find user IDs for usernames
-            const debtorMember = await this.findMemberByUsername(chatId, debtData.debtorUsername);
-            const creditorMember = await this.findMemberByUsername(chatId, debtData.creditorUsername);
+            // Smart name resolution using aliases
+            const debtorResolution = await this.resolveUserName(chatId, debtData.debtorUsername);
+            const creditorResolution = await this.resolveUserName(chatId, debtData.creditorUsername);
+
+            let debtorMember: ChatMember | null = null;
+            let creditorMember: ChatMember | null = null;
+            let needsConfirmation = false;
+
+            // Handle debtor resolution
+            if (debtorResolution.confidence > 0.7 && !debtorResolution.needsConfirmation) {
+              // High confidence match
+              debtorMember = await this.findMemberByUserId(chatId, debtorResolution.userId!);
+              log.info('Debtor resolved via alias', { 
+                mentionedName: debtData.debtorUsername,
+                realName: debtorResolution.realName,
+                confidence: debtorResolution.confidence
+              });
+            } else if (debtorResolution.needsConfirmation) {
+              needsConfirmation = true;
+            }
+
+            // Fallback to traditional member lookup
+            if (!debtorMember) {
+              debtorMember = await this.findMemberByUsername(chatId, debtData.debtorUsername);
+            }
+
+            // Handle creditor resolution  
+            if (creditorResolution.confidence > 0.7 && !creditorResolution.needsConfirmation) {
+              // High confidence match
+              creditorMember = await this.findMemberByUserId(chatId, creditorResolution.userId!);
+              log.info('Creditor resolved via alias', {
+                mentionedName: debtData.creditorUsername,
+                realName: creditorResolution.realName,
+                confidence: creditorResolution.confidence
+              });
+            } else if (creditorResolution.needsConfirmation) {
+              needsConfirmation = true;
+            }
+
+            // Fallback to traditional member lookup
+            if (!creditorMember) {
+              creditorMember = await this.findMemberByUsername(chatId, debtData.creditorUsername);
+            }
+
+            // Auto-create missing members for debt tracking
+            if (!debtorMember) {
+              const realName = debtorResolution.realName || debtData.debtorUsername;
+              debtorMember = await this.createVirtualMember(chatId, realName);
+              
+              // Create alias mapping if we have a good resolution
+              if (debtorResolution.confidence > 0.5) {
+                await this.createUserAlias(
+                  chatId,
+                  debtorMember!.userId,
+                  realName,
+                  [debtData.debtorUsername],
+                  userId,
+                  debtorResolution.confidence
+                );
+              }
+              
+              log.info('Created virtual member for debtor', { 
+                chatId, 
+                mentionedName: debtData.debtorUsername,
+                realName,
+                userId: debtorMember?.userId 
+              });
+            }
+
+            if (!creditorMember) {
+              const realName = creditorResolution.realName || debtData.creditorUsername;
+              creditorMember = await this.createVirtualMember(chatId, realName);
+              
+              // Create alias mapping if we have a good resolution
+              if (creditorResolution.confidence > 0.5) {
+                await this.createUserAlias(
+                  chatId,
+                  creditorMember!.userId,
+                  realName,
+                  [debtData.creditorUsername],
+                  userId,
+                  creditorResolution.confidence
+                );
+              }
+              
+              log.info('Created virtual member for creditor', { 
+                chatId, 
+                mentionedName: debtData.creditorUsername,
+                realName,
+                userId: creditorMember?.userId 
+              });
+            }
 
             if (debtorMember && creditorMember) {
-              const newDebt: NewDebt = {
-                chatId,
-                debtorUserId: debtorMember.userId,
-                debtorUsername: debtorMember.username,
-                creditorUserId: creditorMember.userId,
-                creditorUsername: creditorMember.username,
-                amount: debtData.amount.toString(),
-                currency: debtData.currency || 'VND',
-                description: debtData.description || userMessage,
-                aiDetection: JSON.stringify(aiResponse),
-              };
-
+              // Simple insert like food_suggestions - store user message and AI response
               await this.database.query(
                 'INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, ai_detection) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-                [chatId, newDebt.debtorUserId, newDebt.debtorUsername, newDebt.creditorUserId, newDebt.creditorUsername, newDebt.amount, newDebt.currency, newDebt.description, newDebt.aiDetection]
+                [
+                  chatId,
+                  debtorMember.userId,
+                  debtorMember.username || debtData.debtorUsername,
+                  creditorMember.userId, 
+                  creditorMember.username || debtData.creditorUsername,
+                  debtData.amount.toString(),
+                  debtData.currency || 'VND',
+                  debtData.description || userMessage, // Original user message
+                  JSON.stringify(aiResponse) // Full AI response for reference
+                ]
               );
 
               log.user.action('ai_debt_created', userId, { 
@@ -236,6 +325,12 @@ export class AIBotService {
                 debtor: debtData.debtorUsername,
                 creditor: debtData.creditorUsername,
                 amount: debtData.amount
+              });
+            } else {
+              log.error('Failed to create/find members for debt tracking', { 
+                chatId, 
+                debtorUsername: debtData.debtorUsername,
+                creditorUsername: debtData.creditorUsername
               });
             }
           }
@@ -334,25 +429,69 @@ export class AIBotService {
   }
 
   /**
-   * Log AI conversation
+   * Find member by user ID
    */
-  private async logConversation(
-    chatId: string,
-    userId: string,
-    userMessage: string,
-    aiResponse: string,
-    actionType: string,
-    processingTime: number
-  ): Promise<void> {
+  private async findMemberByUserId(chatId: string, userId: string): Promise<ChatMember | null> {
     try {
-      await this.database.query(
-        'INSERT INTO ai_conversations (chat_id, user_id, user_message, ai_response, action_type, processing_time) VALUES ($1, $2, $3, $4, $5, $6)',
-        [chatId, userId, userMessage, aiResponse, actionType, processingTime]
-      );
+      const members = await this.database.query(
+        'SELECT * FROM chat_members WHERE chat_id = $1 AND user_id = $2 AND is_active = true',
+        [chatId, userId]
+      ) as ChatMember[];
+
+      return members[0] || null;
     } catch (error: any) {
-      log.error('Error logging conversation', error, { chatId, userId });
+      log.error('Error finding member by user ID', error, { chatId, userId });
+      return null;
     }
   }
+
+  /**
+   * Create virtual member for debt tracking (when user mentioned doesn't exist in chat_members)
+   */
+  private async createVirtualMember(chatId: string, displayName: string): Promise<ChatMember | null> {
+    try {
+      // Generate virtual user ID (use timestamp + random for uniqueness)
+      const virtualUserId = `virtual_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      
+      log.info('Creating virtual member', { 
+        chatId, 
+        displayName, 
+        virtualUserId
+      });
+      
+      // Create virtual member
+      await this.database.query(
+        'INSERT INTO chat_members (chat_id, user_id, username, first_name, is_active) VALUES ($1, $2, $3, $4, $5)',
+        [chatId, virtualUserId, null, displayName, true]
+      );
+
+      // Return created member with proper structure
+      const virtualMember: ChatMember = {
+        chatId: chatId,
+        userId: virtualUserId,
+        username: null,
+        firstName: displayName,
+        lastName: null,
+        isActive: true,
+        joinedAt: new Date(),
+        lastActiveAt: new Date()
+      };
+
+      log.info('Virtual member created successfully', { 
+        chatId, 
+        displayName, 
+        virtualUserId,
+        memberStructure: virtualMember
+      });
+
+      return virtualMember;
+    } catch (error: any) {
+      log.error('Error creating virtual member', error, { chatId, displayName });
+      return null;
+    }
+  }
+
+  // Removed logConversation method - no longer using ai_conversations table
 
   /**
    * Get user's food history
@@ -390,6 +529,408 @@ export class AIBotService {
     } catch (error: any) {
       log.error('Error getting chat debts', error, { chatId });
       return [];
+    }
+  }
+
+  /**
+   * Prepare enriched context with smart data lookup
+   */
+  private async prepareEnrichedContext(
+    userMessage: string,
+    chatId: string,
+    userId: string,
+    username?: string,
+    baseContext?: any
+  ): Promise<any> {
+    const enrichedContext = { ...baseContext };
+    
+    // Detect if user is asking about debts or food
+    const isDebtQuery = this.isDebtRelatedQuery(userMessage);
+    const isFoodQuery = this.isFoodRelatedQuery(userMessage);
+    
+    try {
+      // Add debt information if relevant
+      if (isDebtQuery) {
+        const allDebts = await this.getChatDebts(chatId);
+        const unpaidDebts = await this.getChatDebts(chatId, true);
+        const debtSummary = this.calculateDebtSummary(allDebts, username);
+        
+        enrichedContext.debtData = {
+          allDebts: allDebts.slice(0, 20), // Limit to recent 20
+          unpaidDebts,
+          summary: debtSummary,
+          totalRecords: allDebts.length
+        };
+        
+        log.debug('Added debt context', { 
+          chatId, userId,
+          totalDebts: allDebts.length,
+          unpaidDebts: unpaidDebts.length,
+          userBalance: debtSummary.netBalance
+        });
+      }
+      
+      // Add food history if relevant
+      if (isFoodQuery) {
+        const foodHistory = await this.getUserFoodHistory(userId, 10);
+        const recentSuggestions = await this.getChatFoodHistory(chatId, 10);
+        
+        enrichedContext.foodData = {
+          userHistory: foodHistory,
+          chatHistory: recentSuggestions,
+          totalUserSuggestions: foodHistory.length
+        };
+        
+        log.debug('Added food context', {
+          chatId, userId,
+          userSuggestions: foodHistory.length,
+          chatSuggestions: recentSuggestions.length
+        });
+      }
+
+      // Add alias data for smart name resolution
+      const knownAliases = await this.database.query(
+        'SELECT * FROM user_aliases WHERE chat_id = $1 ORDER BY confidence DESC',
+        [chatId]
+      ) as UserAlias[];
+
+      if (knownAliases.length > 0) {
+        enrichedContext.aliasData = {
+          knownAliases: knownAliases.map(alias => ({
+            realName: alias.realName,
+            aliases: alias.aliases as string[],
+            confidence: alias.confidence,
+            isConfirmed: alias.isConfirmed
+          })),
+          totalMappings: knownAliases.length
+        };
+
+        log.debug('Added alias context', {
+          chatId, userId,
+          aliasMappings: knownAliases.length
+        });
+      }
+      
+    } catch (error: any) {
+      log.error('Error preparing enriched context', error, { chatId, userId });
+    }
+    
+    return enrichedContext;
+  }
+
+  /**
+   * Check if message is debt-related
+   */
+  private isDebtRelatedQuery(message: string): boolean {
+    const debtKeywords = [
+      'nợ', 'debt', 'tiền', 'money', 'trả', 'pay', 'owes', 'owed',
+      'mượn', 'borrow', 'lend', 'cho vay', 'vay', 'số dư', 'balance',
+      'tính toán', 'tổng', 'total', 'bao nhiêu', 'how much'
+    ];
+    
+    const lowerMessage = message.toLowerCase();
+    return debtKeywords.some(keyword => lowerMessage.includes(keyword));
+  }
+
+  /**
+   * Check if message is food-related
+   */
+  private isFoodRelatedQuery(message: string): boolean {
+    const foodKeywords = [
+      'ăn', 'eat', 'food', 'món', 'dish', 'nấu', 'cook', 'cooking',
+      'đói', 'hungry', 'bụng đói', 'đói bụng', 'hôm nay ăn gì',
+      'hôm nay nấu gì', 'what to eat', 'gợi ý', 'suggest', 'món ăn',
+      'food', 'recipe', 'công thức', 'cách làm', 'how to cook',
+      'nguyên liệu', 'ingredients', 'lịch sử', 'history', 'đã ăn'
+    ];
+    
+    const lowerMessage = message.toLowerCase();
+    return foodKeywords.some(keyword => lowerMessage.includes(keyword));
+  }
+
+  /**
+   * Calculate debt summary for a user
+   */
+  private calculateDebtSummary(debts: Debt[], username?: string) {
+    let totalOwed = 0; // Số tiền user nợ người khác
+    let totalLent = 0; // Số tiền người khác nợ user
+    let netBalance = 0; // Số dư cuối cùng
+    
+    const debtDetails: any[] = [];
+    const creditorDetails: any[] = [];
+    
+    debts.forEach(debt => {
+      const amount = parseFloat(debt.amount) || 0;
+      const isPaid = debt.isPaid;
+      
+      if (!isPaid) {
+        if (debt.debtorUsername === username) {
+          // User nợ người khác
+          totalOwed += amount;
+          debtDetails.push({
+            creditor: debt.creditorUsername,
+            amount,
+            description: debt.description,
+            date: debt.createdAt
+          });
+        } else if (debt.creditorUsername === username) {
+          // Người khác nợ user
+          totalLent += amount;
+          creditorDetails.push({
+            debtor: debt.debtorUsername,
+            amount,
+            description: debt.description,
+            date: debt.createdAt
+          });
+        }
+      }
+    });
+    
+    netBalance = totalLent - totalOwed; // Dương = người ta nợ user, âm = user nợ người ta
+    
+    return {
+      totalOwed,
+      totalLent,
+      netBalance,
+      debtDetails,
+      creditorDetails,
+      status: netBalance > 0 ? 'creditor' : netBalance < 0 ? 'debtor' : 'balanced'
+    };
+  }
+
+  /**
+   * Get recent food suggestions for the chat
+   */
+  private async getChatFoodHistory(chatId: string, limit: number = 10): Promise<FoodSuggestion[]> {
+    try {
+      const history = await this.database.query(
+        'SELECT * FROM food_suggestions WHERE chat_id = $1 ORDER BY created_at DESC LIMIT $2',
+        [chatId, limit]
+      ) as FoodSuggestion[];
+
+      return history;
+    } catch (error: any) {
+      log.error('Error getting chat food history', error, { chatId });
+      return [];
+    }
+  }
+
+  /**
+   * Smart name resolution using aliases
+   */
+  private async resolveUserName(chatId: string, mentionedName: string): Promise<{
+    userId?: string;
+    realName?: string;
+    confidence: number;
+    needsConfirmation: boolean;
+    possibleMatches?: UserAlias[];
+  }> {
+    try {
+      // Get all aliases for this chat
+      const aliases = await this.database.query(
+        'SELECT * FROM user_aliases WHERE chat_id = $1',
+        [chatId]
+      ) as UserAlias[];
+
+      const matches: { alias: UserAlias; score: number }[] = [];
+
+      // Score each alias
+      aliases.forEach(alias => {
+        const aliasArray = alias.aliases as string[];
+        
+        aliasArray.forEach(aliasName => {
+          const score = this.calculateNameSimilarity(mentionedName.toLowerCase(), aliasName.toLowerCase());
+          if (score > 0.3) { // Threshold for considering a match
+            matches.push({ alias, score });
+          }
+        });
+
+        // Also check real name
+        const realNameScore = this.calculateNameSimilarity(mentionedName.toLowerCase(), alias.realName.toLowerCase());
+        if (realNameScore > 0.3) {
+          matches.push({ alias, score: realNameScore });
+        }
+      });
+
+      // Sort by score descending
+      matches.sort((a, b) => b.score - a.score);
+
+      if (matches.length === 0) {
+        return { confidence: 0, needsConfirmation: true };
+      }
+
+      const bestMatch = matches[0];
+      
+      // High confidence if score > 0.8 or exact match
+      if (bestMatch.score > 0.8 || matches[0].score === 1.0) {
+        return {
+          userId: bestMatch.alias.userId,
+          realName: bestMatch.alias.realName,
+          confidence: bestMatch.score,
+          needsConfirmation: false
+        };
+      }
+
+      // Medium confidence - might need confirmation if multiple close matches
+      if (matches.length > 1 && matches[1].score > 0.6) {
+        return {
+          confidence: bestMatch.score,
+          needsConfirmation: true,
+          possibleMatches: matches.slice(0, 3).map(m => m.alias)
+        };
+      }
+
+      return {
+        userId: bestMatch.alias.userId,
+        realName: bestMatch.alias.realName,
+        confidence: bestMatch.score,
+        needsConfirmation: bestMatch.score < 0.7
+      };
+
+    } catch (error: any) {
+      log.error('Error resolving user name', error, { chatId, mentionedName });
+      return { confidence: 0, needsConfirmation: true };
+    }
+  }
+
+  /**
+   * Calculate name similarity score
+   */
+  private calculateNameSimilarity(name1: string, name2: string): number {
+    const clean1 = name1.toLowerCase().trim();
+    const clean2 = name2.toLowerCase().trim();
+    
+    // Exact match
+    if (clean1 === clean2) return 1.0;
+    
+    // Full name contains exact alias
+    if (clean1.includes(clean2) && clean2.length >= 2) return 0.95;
+    if (clean2.includes(clean1) && clean1.length >= 2) return 0.95;
+    
+    // Fuzzy matching for Vietnamese names
+    const cleanName1 = this.cleanVietnameseName(clean1);
+    const cleanName2 = this.cleanVietnameseName(clean2);
+    
+    if (cleanName1 === cleanName2) return 0.9;
+    
+    // Word-based matching for compound names
+    const words1 = cleanName1.split(/\s+/);
+    const words2 = cleanName2.split(/\s+/);
+    
+    let matchedWords = 0;
+    const totalWords = Math.max(words1.length, words2.length);
+    
+    for (const word1 of words1) {
+      for (const word2 of words2) {
+        if (word1 === word2 && word1.length >= 2) {
+          matchedWords++;
+          break;
+        }
+      }
+    }
+    
+    if (matchedWords > 0) {
+      return Math.min(0.85, 0.5 + (matchedWords / totalWords) * 0.35);
+    }
+    
+    // Character-based fuzzy matching
+    if (cleanName1.includes(cleanName2) || cleanName2.includes(cleanName1)) {
+      return 0.6;
+    }
+    
+    // Levenshtein distance for close matches
+    const distance = this.levenshteinDistance(cleanName1, cleanName2);
+    const maxLength = Math.max(cleanName1.length, cleanName2.length);
+    const similarity = Math.max(0, 1 - (distance / maxLength));
+    
+    return similarity > 0.7 ? similarity : 0;
+  }
+
+  /**
+   * Clean Vietnamese name for better matching
+   */
+  private cleanVietnameseName(name: string): string {
+    return name
+      .toLowerCase()
+      .replace(/[àáạảãâầấậẩẫăằắặẳẵ]/g, 'a')
+      .replace(/[èéẹẻẽêềếệểễ]/g, 'e')
+      .replace(/[ìíịỉĩ]/g, 'i')
+      .replace(/[òóọỏõôồốộổỗơờớợởỡ]/g, 'o')
+      .replace(/[ùúụủũưừứựửữ]/g, 'u')
+      .replace(/[ỳýỵỷỹ]/g, 'y')
+      .replace(/đ/g, 'd')
+      .replace(/[^a-z0-9\s]/g, '')
+      .trim();
+  }
+
+  /**
+   * Simple Levenshtein distance calculation
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+    
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + indicator
+        );
+      }
+    }
+    
+    return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * Create or update user alias mapping
+   */
+  async createUserAlias(
+    chatId: string,
+    userId: string,
+    realName: string,
+    aliases: string[],
+    createdBy: string,
+    confidence: number = 1.0
+  ): Promise<boolean> {
+    try {
+      // Check if alias already exists
+      const existing = await this.database.query(
+        'SELECT * FROM user_aliases WHERE chat_id = $1 AND user_id = $2',
+        [chatId, userId]
+      ) as UserAlias[];
+
+      if (existing.length > 0) {
+        // Update existing alias
+        const existingAliases = existing[0].aliases as string[];
+        const mergedAliases = [...new Set([...existingAliases, ...aliases])];
+        
+        await this.database.query(
+          'UPDATE user_aliases SET aliases = $1, real_name = $2, confidence = $3, updated_at = NOW() WHERE chat_id = $4 AND user_id = $5',
+          [JSON.stringify(mergedAliases), realName, confidence, chatId, userId]
+        );
+      } else {
+        // Create new alias
+        await this.database.query(
+          'INSERT INTO user_aliases (chat_id, user_id, real_name, aliases, confidence, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
+          [chatId, userId, realName, JSON.stringify(aliases), confidence, createdBy]
+        );
+      }
+
+      log.info('User alias created/updated', { 
+        chatId, userId, realName, 
+        aliases: aliases.length,
+        confidence 
+      });
+
+      return true;
+    } catch (error: any) {
+      log.error('Error creating user alias', error, { chatId, userId, realName });
+      return false;
     }
   }
 }

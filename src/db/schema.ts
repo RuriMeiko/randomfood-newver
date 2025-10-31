@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, serial, integer, boolean, decimal } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, serial, integer, boolean, decimal, real, json } from 'drizzle-orm/pg-core';
 
 // Food suggestions history table
 export const foodSuggestions = pgTable('food_suggestions', {
@@ -79,6 +79,20 @@ export const conversationSummaries = pgTable('conversation_summaries', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// User aliases mapping table for smart name recognition
+export const userAliases = pgTable('user_aliases', {
+  id: serial('id').primaryKey(),
+  chatId: text('chat_id').notNull(),
+  userId: text('user_id').notNull(),
+  realName: text('real_name').notNull(), // Tên thật: "Nguyễn Trần Hoàng Long"
+  aliases: json('aliases').notNull(), // Array biệt danh: ["Long ú", "Sobbin", "Long"]
+  confidence: real('confidence').default(1.0), // Độ tin cậy mapping (0.0-1.0)
+  isConfirmed: boolean('is_confirmed').default(false), // AI đã confirm chưa
+  createdBy: text('created_by').notNull(), // User ID người tạo mapping
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+});
+
 
 export type FoodSuggestion = typeof foodSuggestions.$inferSelect;
 export type NewFoodSuggestion = typeof foodSuggestions.$inferInsert;
@@ -92,3 +106,5 @@ export type ConversationMessage = typeof conversationMessages.$inferSelect;
 export type NewConversationMessage = typeof conversationMessages.$inferInsert;
 export type ConversationSummary = typeof conversationSummaries.$inferSelect;
 export type NewConversationSummary = typeof conversationSummaries.$inferInsert;
+export type UserAlias = typeof userAliases.$inferSelect;
+export type NewUserAlias = typeof userAliases.$inferInsert;
