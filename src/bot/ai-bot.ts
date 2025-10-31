@@ -62,11 +62,12 @@ export class AIFoodDebtBot {
     // Set smart default handler for all messages
     this.modernBot.setDefaultHandler(async (ctx) => {
       if (ctx.update_type === 'message' && ctx.text && !ctx.text.startsWith('/')) {
-        // Check if should respond (private chat or mentioned in group)
+        // Check if should respond (private chat, mentioned in group, or reply to bot)
         const isPrivateChat = ctx.isPrivateChat();
         const isMentioned = this.isBotMentioned(ctx.text);
+        const isReplyToBot = ctx.isReplyToBot();
         
-        if (isPrivateChat || isMentioned) {
+        if (isPrivateChat || isMentioned || isReplyToBot) {
           const userId = ctx.user_id?.toString();
           const chatId = ctx.chat_id?.toString();
           const user = ctx.getUser();
@@ -81,6 +82,14 @@ export class AIFoodDebtBot {
             try {
               const startTime = Date.now();
               
+              // Prepare reply context if this is a reply to bot
+              const replyContext = isReplyToBot ? {
+                isReply: true,
+                originalMessage: ctx.getRepliedMessage()?.text || '',
+                originalMessageId: ctx.getRepliedMessage()?.message_id,
+                originalDate: ctx.getRepliedMessage()?.date
+              } : undefined;
+
               // Process with AI
               const result = await this.aiBotService.processUserMessage(
                 cleanText,
@@ -88,7 +97,9 @@ export class AIFoodDebtBot {
                 chatId,
                 user?.username,
                 user?.first_name,
-                user?.last_name
+                user?.last_name,
+                undefined, // telegramMessage (not used currently)
+                replyContext
               );
               
               const processingTime = Date.now() - startTime;

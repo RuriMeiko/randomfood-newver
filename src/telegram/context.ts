@@ -15,6 +15,12 @@ export class TelegramExecutionContext {
   public callback_query_id?: string;
   public text?: string;
   public data?: string;
+  public reply_to_message?: {
+    message_id: number;
+    from: any;
+    text?: string;
+    date: number;
+  };
 
   constructor(api: TelegramApi, update: any) {
     this.api = api;
@@ -48,6 +54,16 @@ export class TelegramExecutionContext {
       this.user_id = update.message.from?.id;
       this.message_id = update.message.message_id;
       this.text = update.message.text;
+      
+      // Store reply_to_message info if present
+      if (update.message.reply_to_message) {
+        this.reply_to_message = {
+          message_id: update.message.reply_to_message.message_id,
+          from: update.message.reply_to_message.from,
+          text: update.message.reply_to_message.text,
+          date: update.message.reply_to_message.date
+        };
+      }
     } else if (update.callback_query) {
       this.chat_id = update.callback_query.message?.chat.id;
       this.user_id = update.callback_query.from?.id;
@@ -224,5 +240,33 @@ export class TelegramExecutionContext {
     const args = parts.slice(1);
     
     return { command, args };
+  }
+
+  /**
+   * Check if this message is a reply to another message
+   */
+  isReply(): boolean {
+    return !!this.reply_to_message;
+  }
+
+  /**
+   * Check if this message is a reply to the bot
+   */
+  isReplyToBot(): boolean {
+    if (!this.reply_to_message) return false;
+    
+    // Check if the replied message is from the bot
+    // Bot usernames usually contain 'bot' or have is_bot = true
+    const fromUser = this.reply_to_message.from;
+    return fromUser?.is_bot === true || 
+           fromUser?.username?.toLowerCase().includes('bot') ||
+           fromUser?.username === 'randomfoodruribot';
+  }
+
+  /**
+   * Get the original message that was replied to
+   */
+  getRepliedMessage(): { message_id: number; from: any; text?: string; date: number } | null {
+    return this.reply_to_message || null;
   }
 }

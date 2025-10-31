@@ -34,7 +34,13 @@ export class AIBotService {
     username?: string,
     firstName?: string,
     lastName?: string,
-    telegramMessage?: any
+    telegramMessage?: any,
+    replyContext?: {
+      isReply: boolean;
+      originalMessage: string;
+      originalMessageId?: number;
+      originalDate?: number;
+    }
   ): Promise<{
     messageConfig: any;
     success: boolean;
@@ -83,6 +89,22 @@ export class AIBotService {
         date: telegramMessage.date,
         fullTelegramObject: telegramMessage
       } : undefined;
+
+      // Add reply context to enriched context if this is a reply
+      if (replyContext?.isReply) {
+        enrichedContext.replyData = {
+          isReplyToBot: true,
+          originalMessage: replyContext.originalMessage,
+          originalMessageId: replyContext.originalMessageId,
+          timeDifference: replyContext.originalDate ? Math.floor((Date.now() / 1000) - replyContext.originalDate) : undefined
+        };
+        
+        log.info('💬 REPLY MESSAGE DETECTED', {
+          userId, chatId,
+          originalMessage: replyContext.originalMessage.substring(0, 50),
+          timeDifference: enrichedContext.replyData.timeDifference
+        });
+      }
 
       // Process with Gemini AI
       const aiResponse = await this.geminiService.processMessage(
@@ -169,7 +191,9 @@ export class AIBotService {
       // LOG TRƯỚC KHI RETURN ĐỂ CHECK MESSAGECONFIG
       log.info('🔍 AI BOT SERVICE TRƯỚC KHI RETURN', {
         chatId, userId,
-        response: aiResponse.response?.substring(0, 50),
+        originalResponse: aiResponse.response?.substring(0, 50),
+        finalResponse: finalResponse?.substring(0, 50),
+        responseChanged: aiResponse.response !== finalResponse,
         actionType: aiResponse.actionType,
         hasMessageConfig: !!aiResponse.messageConfig,
         messageConfig: aiResponse.messageConfig ? {
@@ -179,11 +203,34 @@ export class AIBotService {
         } : null
       });
 
+      // Handle progressive messaging for recursive AI responses
+      if (aiResponse.response !== finalResponse) {
+        // Send original "thinking" messages first, then recursive result
+        return {
+          success: true,
+          response: finalResponse,  // Final AI response
+          actionType: aiResponse.actionType,
+          messageConfig: {
+            shouldSplit: true,
+            messages: [
+              ...(aiResponse.messageConfig?.messages || [aiResponse.response]),
+              finalResponse  // Add the recursive AI response as final message
+            ],
+            delays: [
+              ...(aiResponse.messageConfig?.delays || [1000]),
+              2000  // Longer delay before final intelligent response
+            ],
+            typingDuration: aiResponse.messageConfig?.typingDuration || 1500
+          }
+        };
+      }
+      
+      // Use original messageConfig if no recursive processing happened
       return {
         success: true,
-        response: finalResponse,  // Use processed response instead of original
+        response: finalResponse,
         actionType: aiResponse.actionType,
-        messageConfig: aiResponse.messageConfig  // ĐẢM BẢO TRUYỀN messageConfig
+        messageConfig: aiResponse.messageConfig
       };
 
     } catch (error: any) {

@@ -74,7 +74,8 @@ export function buildSystemPrompt(
   chatMembers: string[], 
   userId: string,
   username?: string,
-  conversationHistory?: any[]
+  conversationHistory?: any[],
+  enrichedContext?: any
 ): string {
   const config = SYSTEM_PROMPT_CONFIG;
   
@@ -114,6 +115,14 @@ NGỮ CẢNH HIỆN TẠI:
 - CHAT_ID: Available as telegram_chat_id
 - USER_ID: Available as telegram_user_id
 
+${enrichedContext?.replyData ? `
+🔄 ĐÂY LÀ REPLY MESSAGE:
+- User đang reply tin nhắn của bot: "${enrichedContext.replyData.originalMessage}"
+- Thời gian từ tin nhắn gốc: ${enrichedContext.replyData.timeDifference ? `${enrichedContext.replyData.timeDifference}s trước` : 'không rõ'}
+- Hãy phản hồi LIÊN QUAN đến tin nhắn gốc mà user đang reply
+- Nhận diện ngữ cảnh và tiếp tục cuộc trò chuyện một cách tự nhiên
+` : ''}
+
 LỊCH SỬ CUỘC TRÒ CHUYỆN (Limited):
 ${contextSummary}
 
@@ -143,8 +152,14 @@ Khi bot vừa hỏi xác nhận (ví dụ: "A nợ B 50k đúng không?") và us
 - Chỉ response acknowledge: "Dạ ok, e đã ghi lại rồi ạ"
 - actionType: "conversation", sql: null
 
+USER_ALIAS_CREATION - Khi user cung cấp thông tin cá nhân:
+- "tên thật của tôi là...", "gọi tôi là...", "tên e là...", "e tên..."
+- User giới thiệu tên thật hoặc muốn được gọi bằng tên khác
+- TRẢ VỀ: conversation + SQL INSERT/UPDATE vào user_aliases
+- Lưu mapping giữa telegram_username và real_name/preferred_name
+
 CONVERSATION - Các trường hợp khác:
-- Chào hỏi, trò chuyện bình thường, confirmation responses
+- Chào hỏi, trò chuyện bình thường, confirmation responses  
 - TRẢ VỀ: chỉ response, không cần SQL
 
 QUAN TRỌNG - FORMAT TRẢ VỀ:
@@ -215,7 +230,29 @@ VÍ DỤ CỤ THỂ:
   "sqlParams": null
 }
 
-7. User: "Chào bot!"
+7. User: "tên thật của anh là Nguyễn Trần Hoàng Long, nhớ nhé"
+{
+  "actionType": "conversation",
+  "response": "Dạ e nhớ rồi! Tên thật của anh là Nguyễn Trần Hoàng Long. E sẽ lưu lại để nhớ nha!",
+  "sql": "INSERT INTO user_aliases (user_id, real_name, aliases, confidence, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id) DO UPDATE SET real_name = $2, aliases = aliases || $3, confidence = $4, updated_at = NOW()",
+  "sqlParams": ["telegram_user_id", "Nguyễn Trần Hoàng Long", "[\"telegram_username\", \"telegram_first_name\"]", "1.0", "telegram_user_id"],
+  "data": {
+    "conversationResponse": "Dạ e nhớ rồi! Tên thật của anh là Nguyễn Trần Hoàng Long. E sẽ lưu lại để nhớ nha!"
+  }
+}
+
+8. User: "gọi tôi là Minh đi"
+{
+  "actionType": "conversation", 
+  "response": "Dạ được ạ! E sẽ gọi anh là Minh từ giờ nhé!",
+  "sql": "INSERT INTO user_aliases (user_id, real_name, aliases, confidence, created_by) VALUES ($1, $2, $3, $4, $5) ON CONFLICT (user_id) DO UPDATE SET aliases = aliases || $3, updated_at = NOW()",
+  "sqlParams": ["telegram_user_id", "Minh", "[\"telegram_username\", \"Minh\"]", "1.0", "telegram_user_id"],
+  "data": {
+    "conversationResponse": "Dạ được ạ! E sẽ gọi anh là Minh từ giờ nhé!"
+  }
+}
+
+9. User: "Chào bot!"
 {
   "actionType": "conversation",
   "response": "Chào anh! Hôm nay thế nào ạ?",

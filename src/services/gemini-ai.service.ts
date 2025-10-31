@@ -90,7 +90,7 @@ export class GeminiAIService {
       }
 
       // Build system prompt với conversation context
-      const systemPrompt = buildSystemPrompt(chatMembers, userId, username, context?.messages || []);
+      const systemPrompt = buildSystemPrompt(chatMembers, userId, username, context?.messages || [], context);
       
       // Prepare enriched context for AI
       let enrichedContextString = '';
