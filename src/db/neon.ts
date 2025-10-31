@@ -55,12 +55,12 @@ export default class NeonDB {
 				return schema.debts;
 			case 'chat_members':
 				return schema.chatMembers;
-			case 'ai_conversations':
-				return schema.aiConversations;
 			case 'conversation_messages':
 				return schema.conversationMessages;
 			case 'conversation_summaries':
 				return schema.conversationSummaries;
+			case 'user_aliases':
+				return schema.userAliases;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}

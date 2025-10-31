@@ -42,17 +42,7 @@ export const chatMembers = pgTable('chat_members', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// AI conversations log for debugging and improvements
-export const aiConversations = pgTable('ai_conversations', {
-  id: serial('id').primaryKey(),
-  chatId: text('chat_id').notNull(),
-  userId: text('user_id').notNull(),
-  userMessage: text('user_message').notNull(),
-  aiResponse: text('ai_response').notNull(),
-  actionType: text('action_type'), // 'food_suggestion', 'debt_tracking', 'conversation'
-  processingTime: integer('processing_time'), // Response time in ms
-  createdAt: timestamp('created_at').defaultNow(),
-});
+// REMOVED: ai_conversations table - now using conversation_messages with recursive AI queries
 
 // Conversation messages table for context management
 export const conversationMessages = pgTable('conversation_messages', {
@@ -99,8 +89,6 @@ export type Debt = typeof debts.$inferSelect;
 export type NewDebt = typeof debts.$inferInsert;
 export type ChatMember = typeof chatMembers.$inferSelect;
 export type NewChatMember = typeof chatMembers.$inferInsert;
-export type AiConversation = typeof aiConversations.$inferSelect;
-export type NewAiConversation = typeof aiConversations.$inferInsert;
 export type ConversationMessage = typeof conversationMessages.$inferSelect;
 export type NewConversationMessage = typeof conversationMessages.$inferInsert;
 export type ConversationSummary = typeof conversationSummaries.$inferSelect;

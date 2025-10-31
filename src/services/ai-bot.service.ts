@@ -113,9 +113,11 @@ export class AIBotService {
         await this.conversationContext.saveBotResponse(chatId, userId, aiResponse.response);
       }
 
-      // Handle SQL execution if AI provided SQL
+      // Handle SQL execution and recursive AI queries
+      let finalResponse = aiResponse.response;
+      
       if (aiResponse.sql && aiResponse.sqlParams) {
-        await this.executeAIGeneratedSQL(
+        const sqlResult = await this.executeAIGeneratedSQL(
           aiResponse.sql, 
           aiResponse.sqlParams, 
           userId, 
@@ -126,6 +128,33 @@ export class AIBotService {
           lastName,
           telegramMessage
         );
+
+        // 🧠 RECURSIVE AI SYSTEM - Check if AI needs to process SQL results
+        const needsRecursion = aiResponse.needsRecursion || 
+                              aiResponse.actionType === 'context_query' ||
+                              (aiResponse.actionType === 'debt_tracking' && aiResponse.sql.toLowerCase().includes('select'));
+        
+        log.info('🔍 RECURSIVE AI ANALYSIS', {
+          userId, chatId,
+          actionType: aiResponse.actionType,
+          needsRecursion,
+          sqlResultCount: sqlResult ? (Array.isArray(sqlResult) ? sqlResult.length : 1) : 0,
+          contextQuery: aiResponse.contextQuery,
+          sqlPreview: aiResponse.sql ? aiResponse.sql.substring(0, 100) + '...' : null
+        });
+        
+        if (needsRecursion && sqlResult !== null) {
+          finalResponse = await this.processRecursiveAIQuery(
+            sqlResult,
+            aiResponse,
+            userId,
+            chatId,
+            username,
+            firstName,
+            lastName,
+            userMessage
+          );
+        }
       }
 
       // Skip context stats for now to avoid DB errors
@@ -152,7 +181,7 @@ export class AIBotService {
 
       return {
         success: true,
-        response: aiResponse.response,
+        response: finalResponse,  // Use processed response instead of original
         actionType: aiResponse.actionType,
         messageConfig: aiResponse.messageConfig  // ĐẢM BẢO TRUYỀN messageConfig
       };
@@ -761,6 +790,348 @@ export class AIBotService {
     }
     
     return matrix[str2.length][str1.length];
+  }
+
+  /**
+   * 🧠 RECURSIVE AI QUERY SYSTEM - Process SQL results and get final AI response
+   */
+  private async processRecursiveAIQuery(
+    sqlResults: any,
+    originalAiResponse: any,
+    userId: string,
+    chatId: string,
+    username?: string,
+    firstName?: string,
+    lastName?: string,
+    originalUserMessage?: string
+  ): Promise<string> {
+    try {
+      log.info('🤖 STARTING RECURSIVE AI QUERY', {
+        userId, chatId,
+        actionType: originalAiResponse.actionType,
+        sqlResultType: Array.isArray(sqlResults) ? `Array(${sqlResults.length})` : typeof sqlResults,
+        contextQuery: originalAiResponse.contextQuery?.purpose,
+        originalResponse: originalAiResponse.response.substring(0, 50) + '...'
+      });
+
+      // Determine chat context
+      const chatMembers = await this.getChatMembers(chatId);
+      const isGroupChat = chatMembers.length > 2;
+      const chatContext = isGroupChat ? 'GROUP CHAT' : 'PRIVATE CHAT';
+
+      // Format SQL results for AI analysis
+      const formattedData = this.formatSqlResultsForAI(sqlResults, originalAiResponse.contextQuery?.expectedDataType);
+
+      // Create recursive prompt for AI to analyze the data
+      const recursivePrompt = `RECURSIVE ANALYSIS - Bạn vừa tra cứu dữ liệu và nhận được kết quả.
+
+NGỮ CẢNH:
+- User gốc hỏi: "${originalUserMessage}"
+- Chat type: ${chatContext}
+- User đang hỏi: ${username || firstName || userId}
+- Mục đích tra cứu: ${originalAiResponse.contextQuery?.purpose || 'Tìm thông tin liên quan'}
+
+DỮ LIỆU VỪA QUERY ĐƯỢC:
+${formattedData}
+
+YÊU CẦU:
+- Phân tích dữ liệu này và đưa ra phản hồi CUỐI CÙNG cho user
+- Trả lời câu hỏi gốc của user dựa trên data vừa lấy được
+- Phản hồi tự nhiên, thân thiện như hầu gái
+- KHÔNG tạo thêm SQL nữa - đây là phản hồi cuối cùng
+- Nếu không có data phù hợp, thông báo một cách tự nhiên
+
+Hãy trả lời trực tiếp, không cần JSON format, chỉ text response cho user.`;
+
+      // Get AI's final analysis
+      const finalAiResponse = await this.geminiService.processMessage(
+        recursivePrompt,
+        chatMembers.map(m => m.username || m.firstName || m.userId),
+        userId,
+        chatId,
+        username
+      );
+
+      if (finalAiResponse.success && finalAiResponse.response) {
+        // Save the final AI response to conversation context
+        await this.conversationContext.saveBotResponse(chatId, userId, finalAiResponse.response);
+        
+        log.info('🎯 RECURSIVE AI ANALYSIS COMPLETED', {
+          userId, chatId,
+          originalQuery: originalUserMessage?.substring(0, 50),
+          finalResponseLength: finalAiResponse.response.length,
+          dataRecords: Array.isArray(sqlResults) ? sqlResults.length : 1
+        });
+
+        return finalAiResponse.response;
+      } else {
+        // Fallback to formatted data if AI analysis fails
+        log.warn('Recursive AI analysis failed, using fallback', {
+          userId, chatId,
+          error: finalAiResponse.error
+        });
+        return this.createFallbackResponse(sqlResults, originalAiResponse, originalUserMessage);
+      }
+
+    } catch (error: any) {
+      log.error('Error in recursive AI query processing', error, { 
+        userId, chatId,
+        sqlResultCount: Array.isArray(sqlResults) ? sqlResults.length : 1
+      });
+      
+      // Fallback response
+      return this.createFallbackResponse(sqlResults, originalAiResponse, originalUserMessage);
+    }
+  }
+
+  /**
+   * Process debt query results with AI for intelligent analysis (Legacy method)
+   */
+  private async processDebtQueryWithAI(
+    sqlResults: any[], 
+    originalResponse: string, 
+    userId: string, 
+    chatId: string, 
+    username?: string,
+    firstName?: string,
+    lastName?: string
+  ): Promise<string> {
+    try {
+      log.info('🤖 STARTING AI DEBT ANALYSIS', {
+        userId, chatId,
+        sqlResultCount: sqlResults ? sqlResults.length : 0,
+        originalResponse: originalResponse.substring(0, 50) + '...'
+      });
+
+      // If no results, ask AI to respond naturally to empty debt list
+      if (!sqlResults || sqlResults.length === 0) {
+        log.info('💭 No debts found, asking AI for friendly response', { userId, chatId });
+        
+        const aiEmptyResponse = await this.geminiService.processMessage(
+          `User hỏi về danh sách nợ nhưng hiện tại không có ai nợ ai cả. 
+          
+          User đang hỏi: ${username || firstName || userId}
+          
+          Hãy phản hồi một cách tự nhiên, thân thiện rằng không có nợ nần gì trong group. 
+          KHÔNG dùng emoji, viết như tin nhắn bạn bè.`,
+          [],
+          userId,
+          chatId,
+          username
+        );
+
+        if (aiEmptyResponse.success && aiEmptyResponse.response) {
+          return aiEmptyResponse.response;
+        } else {
+          return "Hiện tại không có ai nợ ai cả! Tất cả đã thanh toán sạch sẽ rồi.";
+        }
+      }
+
+      // Prepare debt data for AI analysis
+      const debtDataForAI = sqlResults.map(debt => ({
+        debtor: debt.debtor_username,
+        creditor: debt.creditor_username,
+        amount: parseFloat(debt.amount) || 0,
+        description: debt.description || '',
+        date: debt.created_at
+      }));
+
+      // Calculate some basic statistics
+      const totalAmount = debtDataForAI.reduce((sum, debt) => sum + debt.amount, 0);
+      const uniqueDebtors = [...new Set(debtDataForAI.map(d => d.debtor))];
+      const uniqueCreditors = [...new Set(debtDataForAI.map(d => d.creditor))];
+
+      // Ask AI to analyze the debt data and provide intelligent response
+      const aiAnalysisResponse = await this.geminiService.processMessage(
+        `Phân tích dữ liệu nợ này và đưa ra phản hồi thông minh:
+
+DỮ LIỆU NỢ HIỆN TẠI:
+${JSON.stringify(debtDataForAI, null, 2)}
+
+THỐNG KÊ:
+- Tổng số tiền nợ: ${totalAmount} VND
+- Số người nợ: ${uniqueDebtors.length}
+- Số người cho vay: ${uniqueCreditors.length}
+- User đang hỏi: ${username || firstName || userId}
+
+YÊU CẦU:
+- Phân tích ai nợ ai bao nhiêu
+- Đưa ra nhận xét thông minh (ai nợ nhiều nhất, ai được nợ nhiều nhất)
+- Phản hồi tự nhiên, thân thiện như con người
+- Format dễ đọc với số tiền (dùng k cho nghìn)
+- KHÔNG dùng emoji, viết như tin nhắn bạn bè
+- Nếu user có liên quan đến danh sách nợ, đề cập riêng về họ`,
+        [], // No chat members needed for this analysis
+        userId,
+        chatId,
+        username
+      );
+
+      if (aiAnalysisResponse.success && aiAnalysisResponse.response) {
+        // Save AI analysis response to conversation context
+        await this.conversationContext.saveBotResponse(chatId, userId, aiAnalysisResponse.response);
+        
+        log.info('AI debt analysis completed', {
+          userId, chatId,
+          originalResponse: originalResponse.substring(0, 50),
+          analysisLength: aiAnalysisResponse.response.length,
+          debtRecords: sqlResults.length,
+          totalAmount
+        });
+
+        return aiAnalysisResponse.response;
+      } else {
+        // Fallback to simple format if AI analysis fails
+        log.warn('AI debt analysis failed, using fallback', {
+          userId, chatId,
+          error: aiAnalysisResponse.error
+        });
+        return this.formatDebtQueryResults(sqlResults, originalResponse);
+      }
+
+    } catch (error: any) {
+      log.error('Error processing debt query with AI', error, { 
+        userId, chatId,
+        sqlResultCount: sqlResults?.length || 0
+      });
+      
+      // Fallback to simple format on error
+      return this.formatDebtQueryResults(sqlResults, originalResponse);
+    }
+  }
+
+  /**
+   * Format debt query results for user display (fallback method)
+   */
+  private formatDebtQueryResults(sqlResults: any[], originalResponse: string): string {
+    if (!sqlResults || sqlResults.length === 0) {
+      return "Hiện tại không có ai nợ ai cả! 🎉";
+    }
+
+    let formattedResponse = originalResponse + "\n\n";
+    formattedResponse += "📋 DANH SÁCH NỢ HIỆN TẠI:\n";
+    
+    // Group debts by debtor-creditor pairs and sum amounts
+    const debtSummary: { [key: string]: { total: number, descriptions: string[] } } = {};
+    
+    sqlResults.forEach((debt: any) => {
+      const key = `${debt.debtor_username} → ${debt.creditor_username}`;
+      const amount = parseFloat(debt.amount) || 0;
+      
+      if (!debtSummary[key]) {
+        debtSummary[key] = { total: 0, descriptions: [] };
+      }
+      
+      debtSummary[key].total += amount;
+      if (debt.description && debt.description.trim()) {
+        debtSummary[key].descriptions.push(debt.description.trim());
+      }
+    });
+
+    // Format each debt entry
+    Object.entries(debtSummary).forEach(([key, data]) => {
+      const formattedAmount = data.total >= 1000 
+        ? `${(data.total / 1000).toFixed(0)}k` 
+        : `${data.total}`;
+      
+      formattedResponse += `• ${key}: ${formattedAmount} VND`;
+      
+      if (data.descriptions.length > 0) {
+        const uniqueDescriptions = [...new Set(data.descriptions)];
+        formattedResponse += ` (${uniqueDescriptions.slice(0, 2).join(', ')})`;
+        if (uniqueDescriptions.length > 2) {
+          formattedResponse += ` +${uniqueDescriptions.length - 2} khác`;
+        }
+      }
+      
+      formattedResponse += "\n";
+    });
+
+    // Add summary
+    const totalDebtors = new Set(sqlResults.map(d => d.debtor_username)).size;
+    const totalCreditors = new Set(sqlResults.map(d => d.creditor_username)).size;
+    const totalAmount = sqlResults.reduce((sum, d) => sum + (parseFloat(d.amount) || 0), 0);
+    
+    formattedResponse += `\n💰 Tổng cộng: ${totalAmount >= 1000 ? `${(totalAmount / 1000).toFixed(0)}k` : totalAmount} VND`;
+    formattedResponse += ` | ${totalDebtors} người nợ | ${totalCreditors} người cho vay`;
+
+    return formattedResponse;
+  }
+
+  /**
+   * Format SQL results for AI analysis based on data type
+   */
+  private formatSqlResultsForAI(sqlResults: any, expectedDataType?: string): string {
+    if (!sqlResults) {
+      return "KHÔNG CÓ DỮ LIỆU";
+    }
+
+    if (!Array.isArray(sqlResults)) {
+      return `SINGLE RESULT: ${JSON.stringify(sqlResults, null, 2)}`;
+    }
+
+    if (sqlResults.length === 0) {
+      return "DANH SÁCH TRỐNG - không có dữ liệu nào được tìm thấy";
+    }
+
+    switch (expectedDataType) {
+      case 'conversation_history':
+        return `LỊCH SỬ CHAT (${sqlResults.length} tin nhắn):
+${sqlResults.map((msg, idx) => 
+  `${idx + 1}. [${msg.timestamp}] ${msg.message_type === 'user' ? msg.user_id || 'User' : 'Bot'}: ${msg.content}`
+).join('\n')}`;
+
+      case 'debt_list':
+        return `DANH SÁCH NỢ (${sqlResults.length} records):
+${sqlResults.map((debt, idx) => 
+  `${idx + 1}. ${debt.debtor_username} nợ ${debt.creditor_username}: ${debt.amount} VND (${debt.description || 'không rõ'})${debt.debt_count ? ` - Tổng ${debt.debt_count} lần nợ` : ''}`
+).join('\n')}`;
+
+      case 'user_info':
+        return `THÔNG TIN USER (${sqlResults.length} records):
+${sqlResults.map((user, idx) => 
+  `${idx + 1}. ${user.username || user.first_name}: ${user.real_name || 'chưa rõ tên thật'}${user.aliases ? ` (biệt danh: ${Array.isArray(user.aliases) ? user.aliases.join(', ') : user.aliases})` : ''}`
+).join('\n')}`;
+
+      case 'group_members':
+        return `THÀNH VIÊN GROUP (${sqlResults.length} người):
+${sqlResults.map((member, idx) => 
+  `${idx + 1}. ${member.username || member.first_name || member.user_id}${member.last_seen ? ` (last seen: ${member.last_seen})` : ''}`
+).join('\n')}`;
+
+      default:
+        return `DỮ LIỆU TỔNG QUÁT (${sqlResults.length} records):
+${sqlResults.map((item, idx) => 
+  `${idx + 1}. ${JSON.stringify(item, null, 2)}`
+).join('\n\n')}`;
+    }
+  }
+
+  /**
+   * Create fallback response when AI analysis fails
+   */
+  private createFallbackResponse(sqlResults: any, originalAiResponse: any, originalUserMessage?: string): string {
+    if (!sqlResults || (Array.isArray(sqlResults) && sqlResults.length === 0)) {
+      return "E không tìm thấy thông tin nào liên quan đến câu hỏi của a ơi.";
+    }
+
+    const dataType = originalAiResponse.contextQuery?.expectedDataType;
+    
+    switch (dataType) {
+      case 'debt_list':
+        return this.formatDebtQueryResults(sqlResults, "Đây là thông tin nợ e tìm được:");
+        
+      case 'conversation_history':
+        if (Array.isArray(sqlResults) && sqlResults.length > 0) {
+          return `E tìm được ${sqlResults.length} tin nhắn liên quan. Gần đây nhất là: "${sqlResults[0]?.content || 'không rõ'}"`;
+        }
+        break;
+        
+      default:
+        return `E tìm được ${Array.isArray(sqlResults) ? sqlResults.length : 1} kết quả, nhưng không thể phân tích được. Bạn có thể hỏi cụ thể hơn không ạ?`;
+    }
+
+    return "E gặp lỗi khi phân tích dữ liệu. Bạn thử hỏi lại nhé!";
   }
 
   /**

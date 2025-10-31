@@ -10,11 +10,16 @@ export interface MessageConfig {
 }
 
 export interface GeminiAIResponse {
-  actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'error';
+  actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'context_query' | 'error';
   response: string;
   messageConfig?: MessageConfig;
   sql?: string | null;
   sqlParams?: any[] | null;
+  needsRecursion?: boolean; // Indicates if AI needs to query more data before final response
+  contextQuery?: {
+    purpose: string; // Why AI needs this data
+    expectedDataType: 'conversation_history' | 'debt_list' | 'user_info' | 'group_members';
+  };
   data?: {
     // For food suggestions
     foodName?: string;
@@ -32,6 +37,10 @@ export interface GeminiAIResponse {
     
     // For conversation
     conversationResponse?: string;
+    
+    // For context queries
+    queryPurpose?: string;
+    followUpAction?: string;
   };
   success: boolean;
   error?: string;
