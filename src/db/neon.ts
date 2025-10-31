@@ -301,19 +301,20 @@ export default class NeonDB {
 	 * Execute raw SQL query - needed for AI bot service
 	 * Uses neon client's query method for proper parameter handling
 	 */
-	async query(sqlString: string, params: any[] = []): Promise<any[]> {
+	async query(sqlString: string, params?: any[]): Promise<any[]> {
 		try {
-			if (params.length === 0) {
-				// No parameters - use tagged template
-				return await this.neonClient`${sqlString}`;
+			// Use neon client's query method for proper parameter handling
+			if (!params || params.length === 0) {
+				// No parameters 
+				return await this.neonClient.query(sqlString);
 			} else {
-				// With parameters - use neon client's query method
+				// With parameters
 				return await this.neonClient.query(sqlString, params);
 			}
 		} catch (error: any) {
 			log.error('Database query error', error, { 
 				sqlString: sqlString.substring(0, 100), 
-				paramCount: params.length,
+				paramCount: params?.length || 0,
 				errorMessage: error.message 
 			});
 			throw new NeonError({ error: `Failed to execute query: ${error.message}` });

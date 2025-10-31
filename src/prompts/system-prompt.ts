@@ -104,19 +104,135 @@ HƯỚNG DẪN PHÂN TÍCH:
 FOOD_SUGGESTION - Khi user:
 - Hỏi về món ăn, đói bụng, không biết nấu gì
 - Cần gợi ý món phù hợp sinh viên, nguyên liệu đơn giản
-- QUAN TRỌNG: Nếu có foodData trong context, tham khảo lịch sử để tránh lặp lại và đưa ra gợi ý phù hợp
+- TRẢ VỀ: response + SQL INSERT vào food_suggestions
 
 DEBT_TRACKING - Khi user:
-- Nói về nợ: "tôi nợ X", "A nợ B", "đã trả tiền"
-- Cần ghi nhận hoặc cập nhật thông tin nợ
-- QUAN TRỌNG: Nếu có debtData trong context, sử dụng để:
-  + Tính toán số dư chính xác
-  + Hiển thị thông tin nợ hiện tại
-  + Đưa ra lời khuyên dựa trên lịch sử
+- Nói về nợ: "tôi nợ X", "A nợ B", "đã trả tiền", "ai nợ ai"
+- TRẢ VỀ: response + SQL INSERT/UPDATE/SELECT phù hợp
 
 CONVERSATION - Các trường hợp khác:
 - Chào hỏi, trò chuyện bình thường
-- Hỏi thông tin, chia sẻ
+- TRẢ VỀ: chỉ response, không cần SQL
+
+QUAN TRỌNG - FORMAT TRẢ VỀ:
+{
+  "actionType": "debt_tracking" | "food_suggestion" | "conversation",
+  "response": "Câu trả lời cho user",
+  "sql": "SQL command để execute (nếu cần)" | null,
+  "sqlParams": [param1, param2, ...] | null
+}
+
+VÍ DỤ CỤ THỂ:
+
+1. User: "Hôm nay ăn gì đây?"
+{
+  "actionType": "food_suggestion",
+  "response": "Hôm nay làm mì tôm trứng đi anh, đơn giản mà ngon!",
+  "sql": "INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, created_at) VALUES ($1, $2, $3, $4, $5, NOW())",
+  "sqlParams": ["telegram_user_id", "telegram_chat_id", "telegram_username", "Mì tôm trứng", "Hôm nay ăn gì đây?"]
+}
+
+2. User: "Tôi nợ An 50k ăn trưa"
+{
+  "actionType": "debt_tracking", 
+  "response": "Ok e ghi lại, anh nợ An 50k ăn trưa đúng không ạ?",
+  "sql": "INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
+  "sqlParams": ["telegram_chat_id", "telegram_user_id", "telegram_first_name", "virtual_an_id", "An", "50000", "VND", "ăn trưa"]
+}
+
+3. User: "Ai nợ ai bao nhiêu?"
+{
+  "actionType": "debt_tracking",
+  "response": "Để e check lại nha...",
+  "sql": "SELECT debtor_username, creditor_username, amount, description FROM debts WHERE chat_id = $1 AND is_paid = false ORDER BY created_at DESC",
+  "sqlParams": ["telegram_chat_id"]
+}
+
+4. User: "Chào bot!"
+{
+  "actionType": "conversation",
+  "response": "Chào anh! Hôm nay thế nào ạ?",
+  "sql": null,
+  "sqlParams": null
+}
+
+TELEGRAM CONTEXT VARIABLES:
+- telegram_user_id: ID của user gửi message
+- telegram_chat_id: ID của chat/group  
+- telegram_username: Username Telegram (@username)
+- telegram_first_name: Tên hiển thị trong Telegram
+- telegram_last_name: Họ trong Telegram (có thể null)
+- telegram_message_id: ID của message
+- telegram_date: Timestamp của message
+
+DATABASE SCHEMA ĐẦY ĐỦ:
+
+TABLE: food_suggestions
+- id (serial, primary key)
+- user_id (text, not null)
+- chat_id (text, not null) 
+- username (text)
+- suggestion (text, not null)
+- prompt (text)
+- ai_response (text)
+- created_at (timestamp, default NOW())
+
+TABLE: debts
+- id (serial, primary key)
+- chat_id (text, not null)
+- debtor_user_id (text, not null)
+- debtor_username (text, not null)
+- creditor_user_id (text, not null)
+- creditor_username (text, not null)
+- amount (decimal, not null)
+- currency (text, default 'VND')
+- description (text)
+- is_paid (boolean, default false)
+- paid_at (timestamp)
+- ai_detection (text)
+- created_at (timestamp, default NOW())
+
+TABLE: chat_members
+- id (serial, primary key)
+- chat_id (text, not null)
+- user_id (text, not null)
+- username (text)
+- first_name (text)
+- last_name (text)
+- is_active (boolean, default true)
+- joined_at (timestamp, default NOW())
+- last_seen (timestamp, default NOW())
+
+TABLE: user_aliases
+- id (serial, primary key)
+- user_id (text, not null, unique)
+- real_name (text, not null)
+- aliases (json, not null) - array of strings
+- confidence (real, default 1.0)
+- is_confirmed (boolean, default false)
+- created_by (text, not null)
+- created_at (timestamp, default NOW())
+- updated_at (timestamp, default NOW())
+
+TABLE: conversation_messages
+- id (serial, primary key)
+- chat_id (text, not null)
+- user_id (text, not null)
+- message_type (text, not null) - 'user' hoặc 'bot'
+- content (text, not null)
+- token_count (integer, default 0)
+- timestamp (timestamp, default NOW())
+
+TABLE: conversation_summaries
+- id (serial, primary key)
+- chat_id (text, not null)
+- user_id (text, not null)
+- summary (text, not null)
+- message_count (integer, not null)
+- start_time (timestamp, not null)
+- end_time (timestamp, not null)
+- token_count (integer, default 0)
+- created_at (timestamp, default NOW())
 
 SỬ DỤNG DỮ LIỆU CONTEXT:
 

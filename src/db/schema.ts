@@ -82,8 +82,7 @@ export const conversationSummaries = pgTable('conversation_summaries', {
 // User aliases mapping table for smart name recognition
 export const userAliases = pgTable('user_aliases', {
   id: serial('id').primaryKey(),
-  chatId: text('chat_id').notNull(),
-  userId: text('user_id').notNull(),
+  userId: text('user_id').notNull().unique(), // Unique per user across all chats
   realName: text('real_name').notNull(), // Tên thật: "Nguyễn Trần Hoàng Long"
   aliases: json('aliases').notNull(), // Array biệt danh: ["Long ú", "Sobbin", "Long"]
   confidence: real('confidence').default(1.0), // Độ tin cậy mapping (0.0-1.0)

@@ -13,6 +13,8 @@ export interface GeminiAIResponse {
   actionType: 'food_suggestion' | 'debt_tracking' | 'conversation' | 'error';
   response: string;
   messageConfig?: MessageConfig;
+  sql?: string | null;
+  sqlParams?: any[] | null;
   data?: {
     // For food suggestions
     foodName?: string;
@@ -54,7 +56,14 @@ export class GeminiAIService {
     userId: string,
     chatId: string,
     username?: string,
-    context?: any
+    context?: any,
+    telegramData?: {
+      messageId?: number;
+      firstName?: string;
+      lastName?: string;
+      date?: number;
+      fullTelegramObject?: any;
+    }
   ): Promise<GeminiAIResponse> {
     try {
       // Tạo context string từ conversation history
@@ -122,6 +131,23 @@ export class GeminiAIService {
         enrichedContextString += `- Khi tạo debt record, dùng tên thật để tránh nhầm lẫn\n`;
       }
       
+      // Prepare Telegram context for AI
+      let telegramContextString = '';
+      if (telegramData) {
+        telegramContextString += `\nTELEGRAM CONTEXT:\n`;
+        telegramContextString += `- User ID: ${userId}\n`;
+        telegramContextString += `- Chat ID: ${chatId}\n`;
+        telegramContextString += `- Username: ${username || 'N/A'}\n`;
+        telegramContextString += `- First Name: ${telegramData.firstName || 'N/A'}\n`;
+        telegramContextString += `- Last Name: ${telegramData.lastName || 'N/A'}\n`;
+        telegramContextString += `- Message ID: ${telegramData.messageId || 'N/A'}\n`;
+        telegramContextString += `- Message Date: ${telegramData.date ? new Date(telegramData.date * 1000).toISOString() : 'N/A'}\n`;
+        
+        if (telegramData.fullTelegramObject) {
+          telegramContextString += `- Full Telegram Object: ${JSON.stringify(telegramData.fullTelegramObject, null, 2)}\n`;
+        }
+      }
+
       const requestBody = {
         contents: [{
           parts: [{
@@ -131,12 +157,16 @@ ${contextString ? `LỊCH SỬ CUỘC TRÒ CHUYỆN:\n${contextString}\n` : ''}
 
 ${enrichedContextString}
 
+${telegramContextString}
+
 USER MESSAGE MỚI: "${userMessage}"
 
 Dựa trên ${contextString ? 'lịch sử và ' : ''}tin nhắn mới, phân tích và trả về JSON:
 {
   "actionType": "food_suggestion" | "debt_tracking" | "conversation",
   "response": "Câu trả lời tự nhiên như con người nhắn tin, KHÔNG emoji",
+  "sql": "SQL command để execute (nếu cần)" | null,
+  "sqlParams": [param1, param2, ...] | null,
   "messageConfig": {
     "shouldSplit": true/false,
     "messages": ["Tin nhắn 1", "Tin nhắn 2", "Tin nhắn 3..."],
@@ -163,11 +193,68 @@ Dựa trên ${contextString ? 'lịch sử và ' : ''}tin nhắn mới, phân t�
   }
 }
 
-VÍ DỤ response cho food_suggestion:
-"Thử làm mì tôm trứng đi bạn. Đun nước sôi cho mì vào, đập trứng vào lúc sắp chín. Thêm chút rau cải hoặc hành lá cho đẹp mắt. Vừa nhanh vừa no bụng."
+VÍ DỤ CỤ THỂ:
 
-VÍ DỤ response cho conversation:
-"Chào bạn! Hôm nay thế nào rồi?"
+1. User: "Hôm nay ăn gì đây?"
+{
+  "actionType": "food_suggestion",
+  "response": "Hôm nay làm mì tôm trứng đi anh, đơn giản mà ngon!",
+  "sql": "INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, created_at) VALUES ($1, $2, $3, $4, $5, NOW())",
+  "sqlParams": ["telegram_user_id", "telegram_chat_id", "telegram_username", "Mì tôm trứng", "Hôm nay ăn gì đây?"],
+  "data": {
+    "foodName": "Mì tôm trứng",
+    "description": "Đun nước sôi cho mì vào, đập trứng vào lúc sắp chín",
+    "ingredients": ["Mì tôm", "Trứng", "Rau cải"],
+    "tips": "Đập trứng khi mì sắp chín để trứng không bị vón cục"
+  }
+}
+
+2. User: "Tôi nợ An 50k ăn trưa"
+{
+  "actionType": "debt_tracking", 
+  "response": "Ok e ghi lại, anh nợ An 50k ăn trưa đúng không ạ?",
+  "sql": "INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())",
+  "sqlParams": ["telegram_chat_id", "telegram_user_id", "telegram_username", "virtual_an_id", "An", "50000", "VND", "ăn trưa"],
+  "data": {
+    "debtorUsername": "telegram_username",
+    "creditorUsername": "An",
+    "amount": 50000,
+    "currency": "VND",
+    "description": "ăn trưa",
+    "action": "create"
+  }
+}
+
+3. User: "Ai nợ ai bao nhiêu?"
+{
+  "actionType": "debt_tracking",
+  "response": "Để e check lại nha...",
+  "sql": "SELECT debtor_username, creditor_username, amount, description FROM debts WHERE chat_id = $1 AND is_paid = false ORDER BY created_at DESC",
+  "sqlParams": ["telegram_chat_id"],
+  "data": {
+    "action": "list"
+  }
+}
+
+4. User: "Chào bot!"
+{
+  "actionType": "conversation",
+  "response": "Chào anh! Hôm nay thế nào ạ?",
+  "sql": null,
+  "sqlParams": null,
+  "data": {
+    "conversationResponse": "Chào anh! Hôm nay thế nào ạ?"
+  }
+}
+
+TELEGRAM CONTEXT VARIABLES (SỬ DỤNG TRONG SQL):
+- telegram_user_id: ID của user gửi message
+- telegram_chat_id: ID của chat/group  
+- telegram_username: Username Telegram
+- telegram_first_name: Tên hiển thị trong Telegram
+- telegram_last_name: Họ trong Telegram
+- telegram_message_id: ID của message
+- telegram_date: Timestamp của message
 
 KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
           }]
@@ -264,6 +351,9 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
           parsedResponse: {
             actionType: aiResponse.actionType,
             response: aiResponse.response,
+            hasSQL: !!aiResponse.sql,
+            sqlPreview: aiResponse.sql ? aiResponse.sql.substring(0, 50) + '...' : null,
+            sqlParamCount: aiResponse.sqlParams ? aiResponse.sqlParams.length : 0,
             hasMessageConfig: !!aiResponse.messageConfig,
             messageConfig: aiResponse.messageConfig,
             hasData: !!aiResponse.data,
@@ -320,6 +410,8 @@ KHÔNG được dùng emoji, không formal, viết như tin nhắn bạn bè`
         return {
           actionType: aiResponse.actionType || 'conversation',
           response: aiResponse.response, // This is the clean text response
+          sql: aiResponse.sql || null,
+          sqlParams: aiResponse.sqlParams || null,
           messageConfig: messageConfig,
           data: aiResponse.data || {},
           success: true

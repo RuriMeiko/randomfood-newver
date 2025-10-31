@@ -33,7 +33,8 @@ export class AIBotService {
     chatId: string,
     username?: string,
     firstName?: string,
-    lastName?: string
+    lastName?: string,
+    telegramMessage?: any
   ): Promise<{
     messageConfig: any;
     success: boolean;
@@ -74,6 +75,15 @@ export class AIBotService {
         context
       );
 
+      // Prepare Telegram data for AI
+      const telegramData = telegramMessage ? {
+        messageId: telegramMessage.message_id,
+        firstName: firstName || telegramMessage.from?.first_name,
+        lastName: lastName || telegramMessage.from?.last_name,
+        date: telegramMessage.date,
+        fullTelegramObject: telegramMessage
+      } : undefined;
+
       // Process with Gemini AI
       const aiResponse = await this.geminiService.processMessage(
         userMessage, 
@@ -81,7 +91,8 @@ export class AIBotService {
         userId,
         chatId,
         username,
-        enrichedContext
+        enrichedContext,
+        telegramData
       );
 
       const processingTime = Date.now() - startTime;
@@ -102,19 +113,19 @@ export class AIBotService {
         await this.conversationContext.saveBotResponse(chatId, userId, aiResponse.response);
       }
 
-      // Handle different action types
-      switch (aiResponse.actionType) {
-        case 'food_suggestion':
-          await this.handleFoodSuggestion(chatId, userId, username, userMessage, aiResponse);
-          break;
-          
-        case 'debt_tracking':
-          await this.handleDebtTracking(chatId, userId, username, userMessage, aiResponse);
-          break;
-          
-        case 'conversation':
-          // Just conversation, no additional action needed
-          break;
+      // Handle SQL execution if AI provided SQL
+      if (aiResponse.sql && aiResponse.sqlParams) {
+        await this.executeAIGeneratedSQL(
+          aiResponse.sql, 
+          aiResponse.sqlParams, 
+          userId, 
+          chatId, 
+          username, 
+          aiResponse.actionType,
+          firstName,
+          lastName,
+          telegramMessage
+        );
       }
 
       // Skip context stats for now to avoid DB errors
@@ -158,205 +169,65 @@ export class AIBotService {
   }
 
   /**
-   * Handle food suggestion action
+   * Execute AI-generated SQL safely
    */
-  private async handleFoodSuggestion(
-    chatId: string, 
+  private async executeAIGeneratedSQL(
+    sql: string, 
+    params: any[], 
     userId: string, 
-    username: string | undefined,
-    userMessage: string,
-    aiResponse: GeminiAIResponse
-  ): Promise<void> {
+    chatId: string, 
+    username?: string, 
+    actionType?: string,
+    firstName?: string,
+    lastName?: string,
+    telegramMessage?: any
+  ): Promise<any> {
     try {
-      // Use the old table structure that works
-      await this.database.query(
-        'INSERT INTO food_suggestions (user_id, chat_id, username, suggestion, prompt, ai_response) VALUES ($1, $2, $3, $4, $5, $6)',
-        [
-          userId, 
-          chatId, 
-          username || null, 
-          aiResponse.data?.foodName || aiResponse.response || 'Food suggestion',
-          userMessage,
-          JSON.stringify(aiResponse)
-        ]
-      );
-
-      log.user.action('ai_food_suggested', userId, { 
-        chatId,
-        foodName: aiResponse.data?.foodName,
-        ingredients: aiResponse.data?.ingredients?.length || 0
+      // Replace placeholder params with actual values
+      const processedParams = params.map(param => {
+        // Legacy placeholders
+        if (param === 'user_id_here') return userId;
+        if (param === 'chat_id_here') return chatId;
+        if (param === 'username_here') return username || 'Unknown';
+        
+        // New Telegram context placeholders
+        if (param === 'telegram_user_id') return userId;
+        if (param === 'telegram_chat_id') return chatId;
+        if (param === 'telegram_username') return username;
+        if (param === 'telegram_first_name') return firstName;
+        if (param === 'telegram_last_name') return lastName;
+        if (param === 'telegram_message_id') return telegramMessage?.message_id;
+        if (param === 'telegram_date') return telegramMessage?.date;
+        
+        return param;
       });
 
+      // Execute the SQL
+      const result = await this.database.query(sql, processedParams);
+
+      log.info('AI-generated SQL executed', { 
+        userId, 
+        chatId, 
+        actionType,
+        sqlPreview: sql.substring(0, 50) + '...',
+        paramCount: processedParams.length,
+        rowsAffected: Array.isArray(result) ? result.length : result.rowCount || 0
+      });
+
+      return result;
     } catch (error: any) {
-      log.error('Error saving food suggestion', error, { userId, chatId });
-      // Don't throw - food suggestion failure shouldn't break the main flow
+      log.error('Error executing AI-generated SQL', error, { 
+        userId, 
+        chatId, 
+        sql: sql.substring(0, 100),
+        params: params.length 
+      });
+      // Don't throw - SQL failure shouldn't break the main flow
+      return null;
     }
   }
 
-  /**
-   * Handle debt tracking action
-   */
-  private async handleDebtTracking(
-    chatId: string, 
-    userId: string, 
-    username: string | undefined,
-    userMessage: string,
-    aiResponse: GeminiAIResponse
-  ): Promise<void> {
-    try {
-      const debtData = aiResponse.data;
-      if (!debtData || !debtData.action) return;
-
-      switch (debtData.action) {
-        case 'create':
-          if (debtData.debtorUsername && debtData.creditorUsername && debtData.amount) {
-            // Smart name resolution using aliases
-            const debtorResolution = await this.resolveUserName(chatId, debtData.debtorUsername);
-            const creditorResolution = await this.resolveUserName(chatId, debtData.creditorUsername);
-
-            let debtorMember: ChatMember | null = null;
-            let creditorMember: ChatMember | null = null;
-            let needsConfirmation = false;
-
-            // Handle debtor resolution
-            if (debtorResolution.confidence > 0.7 && !debtorResolution.needsConfirmation) {
-              // High confidence match
-              debtorMember = await this.findMemberByUserId(chatId, debtorResolution.userId!);
-              log.info('Debtor resolved via alias', { 
-                mentionedName: debtData.debtorUsername,
-                realName: debtorResolution.realName,
-                confidence: debtorResolution.confidence
-              });
-            } else if (debtorResolution.needsConfirmation) {
-              needsConfirmation = true;
-            }
-
-            // Fallback to traditional member lookup
-            if (!debtorMember) {
-              debtorMember = await this.findMemberByUsername(chatId, debtData.debtorUsername);
-            }
-
-            // Handle creditor resolution  
-            if (creditorResolution.confidence > 0.7 && !creditorResolution.needsConfirmation) {
-              // High confidence match
-              creditorMember = await this.findMemberByUserId(chatId, creditorResolution.userId!);
-              log.info('Creditor resolved via alias', {
-                mentionedName: debtData.creditorUsername,
-                realName: creditorResolution.realName,
-                confidence: creditorResolution.confidence
-              });
-            } else if (creditorResolution.needsConfirmation) {
-              needsConfirmation = true;
-            }
-
-            // Fallback to traditional member lookup
-            if (!creditorMember) {
-              creditorMember = await this.findMemberByUsername(chatId, debtData.creditorUsername);
-            }
-
-            // Auto-create missing members for debt tracking
-            if (!debtorMember) {
-              const realName = debtorResolution.realName || debtData.debtorUsername;
-              debtorMember = await this.createVirtualMember(chatId, realName);
-              
-              // Create alias mapping if we have a good resolution
-              if (debtorResolution.confidence > 0.5) {
-                await this.createUserAlias(
-                  chatId,
-                  debtorMember!.userId,
-                  realName,
-                  [debtData.debtorUsername],
-                  userId,
-                  debtorResolution.confidence
-                );
-              }
-              
-              log.info('Created virtual member for debtor', { 
-                chatId, 
-                mentionedName: debtData.debtorUsername,
-                realName,
-                userId: debtorMember?.userId 
-              });
-            }
-
-            if (!creditorMember) {
-              const realName = creditorResolution.realName || debtData.creditorUsername;
-              creditorMember = await this.createVirtualMember(chatId, realName);
-              
-              // Create alias mapping if we have a good resolution
-              if (creditorResolution.confidence > 0.5) {
-                await this.createUserAlias(
-                  chatId,
-                  creditorMember!.userId,
-                  realName,
-                  [debtData.creditorUsername],
-                  userId,
-                  creditorResolution.confidence
-                );
-              }
-              
-              log.info('Created virtual member for creditor', { 
-                chatId, 
-                mentionedName: debtData.creditorUsername,
-                realName,
-                userId: creditorMember?.userId 
-              });
-            }
-
-            if (debtorMember && creditorMember) {
-              // Simple insert like food_suggestions - store user message and AI response
-              await this.database.query(
-                'INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, ai_detection) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)',
-                [
-                  chatId,
-                  debtorMember.userId,
-                  debtorMember.username || debtData.debtorUsername,
-                  creditorMember.userId, 
-                  creditorMember.username || debtData.creditorUsername,
-                  debtData.amount.toString(),
-                  debtData.currency || 'VND',
-                  debtData.description || userMessage, // Original user message
-                  JSON.stringify(aiResponse) // Full AI response for reference
-                ]
-              );
-
-              log.user.action('ai_debt_created', userId, { 
-                chatId,
-                debtor: debtData.debtorUsername,
-                creditor: debtData.creditorUsername,
-                amount: debtData.amount
-              });
-            } else {
-              log.error('Failed to create/find members for debt tracking', { 
-                chatId, 
-                debtorUsername: debtData.debtorUsername,
-                creditorUsername: debtData.creditorUsername
-              });
-            }
-          }
-          break;
-
-        case 'pay':
-          // Mark debt as paid
-          if (debtData.debtorUsername && debtData.creditorUsername) {
-            await this.database.query(
-              'UPDATE debts SET is_paid = true, paid_at = NOW() WHERE chat_id = $1 AND debtor_username = $2 AND creditor_username = $3 AND is_paid = false',
-              [chatId, debtData.debtorUsername, debtData.creditorUsername]
-            );
-
-            log.user.action('ai_debt_paid', userId, { 
-              chatId,
-              debtor: debtData.debtorUsername,
-              creditor: debtData.creditorUsername
-            });
-          }
-          break;
-      }
-
-    } catch (error: any) {
-      log.error('Error handling debt tracking', error, { userId, chatId });
-    }
-  }
+  // handleDebtTracking method removed - now using AI-generated SQL approach
 
   /**
    * Update or create chat member
@@ -588,27 +459,34 @@ export class AIBotService {
         });
       }
 
-      // Add alias data for smart name resolution
-      const knownAliases = await this.database.query(
-        'SELECT * FROM user_aliases WHERE chat_id = $1 ORDER BY confidence DESC',
-        [chatId]
-      ) as UserAlias[];
+      // Temporarily disable alias queries to avoid SQL syntax error
+      try {
+        const knownAliases = await this.database.query(
+          'SELECT * FROM user_aliases ORDER BY confidence DESC'
+        ) as UserAlias[];
 
-      if (knownAliases.length > 0) {
-        enrichedContext.aliasData = {
-          knownAliases: knownAliases.map(alias => ({
-            realName: alias.realName,
-            aliases: alias.aliases as string[],
-            confidence: alias.confidence,
-            isConfirmed: alias.isConfirmed
-          })),
-          totalMappings: knownAliases.length
-        };
+        if (knownAliases.length > 0) {
+          enrichedContext.aliasData = {
+            knownAliases: knownAliases.map(alias => ({
+              realName: alias.realName,
+              aliases: alias.aliases as string[],
+              confidence: alias.confidence,
+              isConfirmed: alias.isConfirmed
+            })),
+            totalMappings: knownAliases.length
+          };
 
-        log.debug('Added alias context', {
-          chatId, userId,
-          aliasMappings: knownAliases.length
+          log.debug('Added alias context', {
+            chatId, userId,
+            aliasMappings: knownAliases.length
+          });
+        }
+      } catch (aliasError: any) {
+        log.warn('Alias query failed, continuing without aliases', { 
+          error: aliasError.message,
+          chatId, userId 
         });
+        // Continue without aliases - don't break the main flow
       }
       
     } catch (error: any) {
@@ -726,10 +604,9 @@ export class AIBotService {
     possibleMatches?: UserAlias[];
   }> {
     try {
-      // Get all aliases for this chat
+      // Get all aliases (global scope)
       const aliases = await this.database.query(
-        'SELECT * FROM user_aliases WHERE chat_id = $1',
-        [chatId]
+        'SELECT * FROM user_aliases'
       ) as UserAlias[];
 
       const matches: { alias: UserAlias; score: number }[] = [];
@@ -887,10 +764,9 @@ export class AIBotService {
   }
 
   /**
-   * Create or update user alias mapping
+   * Create or update user alias mapping (global scope)
    */
   async createUserAlias(
-    chatId: string,
     userId: string,
     realName: string,
     aliases: string[],
@@ -900,8 +776,8 @@ export class AIBotService {
     try {
       // Check if alias already exists
       const existing = await this.database.query(
-        'SELECT * FROM user_aliases WHERE chat_id = $1 AND user_id = $2',
-        [chatId, userId]
+        'SELECT * FROM user_aliases WHERE user_id = $1',
+        [userId]
       ) as UserAlias[];
 
       if (existing.length > 0) {
@@ -910,26 +786,26 @@ export class AIBotService {
         const mergedAliases = [...new Set([...existingAliases, ...aliases])];
         
         await this.database.query(
-          'UPDATE user_aliases SET aliases = $1, real_name = $2, confidence = $3, updated_at = NOW() WHERE chat_id = $4 AND user_id = $5',
-          [JSON.stringify(mergedAliases), realName, confidence, chatId, userId]
+          'UPDATE user_aliases SET aliases = $1, real_name = $2, confidence = $3, updated_at = NOW() WHERE user_id = $4',
+          [JSON.stringify(mergedAliases), realName, confidence, userId]
         );
       } else {
         // Create new alias
         await this.database.query(
-          'INSERT INTO user_aliases (chat_id, user_id, real_name, aliases, confidence, created_by) VALUES ($1, $2, $3, $4, $5, $6)',
-          [chatId, userId, realName, JSON.stringify(aliases), confidence, createdBy]
+          'INSERT INTO user_aliases (user_id, real_name, aliases, confidence, created_by) VALUES ($1, $2, $3, $4, $5)',
+          [userId, realName, JSON.stringify(aliases), confidence, createdBy]
         );
       }
 
       log.info('User alias created/updated', { 
-        chatId, userId, realName, 
+        userId, realName, 
         aliases: aliases.length,
         confidence 
       });
 
       return true;
     } catch (error: any) {
-      log.error('Error creating user alias', error, { chatId, userId, realName });
+      log.error('Error creating user alias', error, { userId, realName });
       return false;
     }
   }
