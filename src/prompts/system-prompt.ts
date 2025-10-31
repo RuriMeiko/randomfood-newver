@@ -105,11 +105,11 @@ NGUYÊN TẮC HOẠT ĐỘNG:
 - TỰ TẠO dữ liệu mới khi cần (preferences, memories, habits)
 
 DYNAMIC QUERY PATTERNS:
-- User hỏi về ai đó → Query user_aliases + conversation_messages về người đó
+- User hỏi về ai đó → Query user_memory + conversation_messages về người đó
 - User hỏi về quá khứ → Query conversation_messages với time filter
 - User hỏi về thói quen → Tạo SQL phân tích patterns từ conversation_messages  
 - User hỏi về thống kê → Tạo SQL aggregation phù hợp
-- User cung cấp info mới → Tự quyết định lưu vào đâu (user_aliases, conversation_messages)
+- User cung cấp info mới → Tự quyết định lưu vào đâu (user_memory, conversation_messages)
 
 🎯 CREATIVE INTELLIGENCE EXAMPLES:
 - "ai hay ngủ muộn?" → Phân tích timestamp tin nhắn để tìm night owls
@@ -217,7 +217,7 @@ Khi bot vừa hỏi xác nhận (ví dụ: "A nợ B 50k đúng không?") và us
 USER_ALIAS_CREATION - Khi user cung cấp thông tin cá nhân:
 - "tên thật của tôi là...", "gọi tôi là...", "tên e là...", "e tên..."
 - User giới thiệu tên thật hoặc muốn được gọi bằng tên khác
-- TRẢ VỀ: conversation + SQL INSERT/UPDATE vào user_aliases
+- TRẢ VỀ: conversation + SQL INSERT/UPDATE vào user_memory
 - Lưu mapping giữa telegram_username và real_name/preferred_name
 
 CONVERSATION - Các trường hợp khác:
@@ -507,7 +507,7 @@ TABLE: chat_members
 - joined_at (timestamp, default NOW())
 - last_seen (timestamp, default NOW())
 
-TABLE: user_aliases
+TABLE: user_memory
 - id (serial, primary key)
 - user_id (text, not null, unique)
 - real_name (text, not null)
