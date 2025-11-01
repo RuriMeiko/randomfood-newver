@@ -14,7 +14,6 @@ command = "npm run build"
 crons = ["* * * * *"]
 
 [vars]
-# Environment variables (non-sensitive)
 
 
 # Example environment configuration

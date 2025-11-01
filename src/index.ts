@@ -1,20 +1,25 @@
 import { AIBot, type TelegramMessage } from './ai-bot';
+import { ModernTelegramBot } from './telegram/modern-client';
 
 export interface Env {
   GEMINI_API_KEY: string;
-  TELEGRAM_BOT_TOKEN: string;
+  API_TELEGRAM: string;
   NEON_DATABASE_URL: string;
 }
 
 let aiBot: AIBot;
+let telegramBot: ModernTelegramBot;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Set environment variables
 
-    // Initialize AI Bot
+    // Initialize AI Bot and Telegram Bot
     if (!aiBot) {
       aiBot = new AIBot(env.GEMINI_API_KEY, env.NEON_DATABASE_URL);
+    }
+    if (!telegramBot) {
+      telegramBot = new ModernTelegramBot(env.API_TELEGRAM);
     }
 
     const url = new URL(request.url);
@@ -43,15 +48,15 @@ export default {
         console.log('Chat:', message.chat.type, `(ID: ${message.chat.id})`);
         console.log('Text:', message.text);
 
-        // Xử lý message bằng AI bot
-        const response = await aiBot.processMessage(message);
+        // Xử lý message bằng AI bot và lấy messages array
+        const aiResponse = await aiBot.processMessageWithMessages(message);
 
         // 📝 LOG: In ra response
         console.log('=== AI RESPONSE ===');
-        console.log('Response:', response);
+        console.log('Messages:', aiResponse.messages);
 
-        // Gửi response về Telegram
-        await sendTelegramMessage(env.TELEGRAM_BOT_TOKEN, message.chat.id, response);
+        // Gửi từng message với typing và delay
+        await sendTelegramMessagesWithDelay(telegramBot, message.chat.id, aiResponse.messages);
 
         console.log('✅ Message processed successfully');
         return new Response('OK', { status: 200 });
@@ -71,7 +76,7 @@ export default {
       try {
         const webhookUrl = `${url.origin}/webhook`;
         const response = await fetch(
-          `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/setWebhook`,
+          `https://api.telegram.org/bot${env.API_TELEGRAM}/setWebhook`,
           {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -148,5 +153,42 @@ async function sendTelegramMessage(botToken: string, chatId: number, text: strin
     });
   } catch (error) {
     console.error('Error sending Telegram message:', error);
+  }
+}
+
+async function sendTelegramMessagesWithDelay(bot: ModernTelegramBot, chatId: number, messages: { text: string; delay: string }[]) {
+  const api = bot.getApi();
+  
+  for (const message of messages) {
+    try {
+      // Show typing indicator
+      console.log('💬 Sending typing action...');
+      try {
+        await api.sendChatAction(chatId, 'typing');
+        console.log('✅ Typing action sent');
+      } catch (typingError) {
+        console.error('❌ Typing action error:', typingError);
+      }
+
+      // Wait for the delay
+      const delayMs = parseInt(message.delay) || 1000;
+      console.log(`⏱️ Waiting ${delayMs}ms before sending: "${message.text}"`);
+      await new Promise(resolve => setTimeout(resolve, delayMs));
+
+      // Send the message
+      console.log('📤 Sending message:', message.text);
+      try {
+        const result = await api.sendMessage({
+          chat_id: chatId,
+          text: message.text
+        });
+        console.log('✅ Message sent successfully:', result.result?.message_id);
+      } catch (sendError) {
+        console.error('❌ Message send error:', sendError);
+      }
+
+    } catch (error) {
+      console.error('Error sending message:', message.text, error);
+    }
   }
 }
