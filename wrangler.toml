@@ -16,6 +16,7 @@ crons = ["* * * * *"]
 [vars]
 # Environment variables (non-sensitive)
 
+
 # Example environment configuration
 # [env.staging]
 # name = "randomfood-staging"
