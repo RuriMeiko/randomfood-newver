@@ -16,6 +16,8 @@
     "wrangler": "^4.45.1"
   },
   "dependencies": {
+    "@google/genai": "^1.28.0",
+    "@google/generative-ai": "^0.15.0",
     "@neondatabase/serverless": "^1.0.2",
     "drizzle-kit": "^0.31.6",
     "drizzle-orm": "^0.44.7"
