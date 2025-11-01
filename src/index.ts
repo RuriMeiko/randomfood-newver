@@ -5,7 +5,7 @@ import { log, LogLevel, logger } from "@/utils/logger";
 
 // The Worker's environment bindings
 interface Bindings {
-	DATABASE_URL: string;
+	NEON_DATABASE_URL: string;
 	API_TELEGRAM: string;
 	GEMINI_API_KEY: string;
 }
@@ -25,7 +25,7 @@ const worker: ExportedHandler<Bindings> = {
 
 		// Initialize database
 		const database = new NeonDB({
-			connectionString: env.DATABASE_URL,
+			connectionString: env.NEON_DATABASE_URL,
 		});
 
 		// Initialize AI Food & Debt Bot with Gemini 2.0 Flash
