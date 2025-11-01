@@ -1,78 +1,93 @@
-import * as utils from "@/utils";
-import NeonDB from "@/db/neon";
-import { AIFoodDebtBot } from "@/bot/ai-bot";
-import { log, LogLevel, logger } from "@/utils/logger";
+// Simple AI Chat Bot with Database History
+import { AIService } from './ai';
 
-// The Worker's environment bindings
-interface Bindings {
-	NEON_DATABASE_URL: string;
-	API_TELEGRAM: string;
-	GEMINI_API_KEY: string;
-}
+// Database connection string từ environment
+const DB_CONNECTION_STRING = 'postgresql://neondb_owner:npg_Ur3GEKgwmD9O@ep-soft-poetry-a18vskpw-pooler.ap-southeast-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require';
 
-// Define the Worker logic
-const worker: ExportedHandler<Bindings> = {
-	async fetch(req, env) {
-		// Initialize logging
-		logger.setContext('Worker');
-		logger.setLogLevel(LogLevel.INFO); // Change to DEBUG for development
-		
-		log.info('Worker started', { 
-			url: req.url,
-			method: req.method,
-			userAgent: req.headers.get('User-Agent')?.substring(0, 50) 
-		});
+// Khởi tạo AI service
+const aiService = new AIService(DB_CONNECTION_STRING);
 
-		// Initialize database
-		const database = new NeonDB({
-			connectionString: env.NEON_DATABASE_URL,
-		});
-
-		// Initialize AI Food & Debt Bot with Gemini 2.0 Flash
-		const aiBot = new AIFoodDebtBot({
-			database: database,
-			telegramToken: env.API_TELEGRAM,
-			geminiApiKey: env.GEMINI_API_KEY,
-		});
-
-		// Parse request
-		const url = new URL(req.url);
-		const path = url.pathname.replace(/[/]$/, "");
-		
-		if (path !== "/api/randomfood") {
-			log.warn('Unknown path accessed', { path, method: req.method });
-			return utils.toError(`Unknown "${path}" URL; try "/api/randomfood" instead.`, 404);
-		}
-
-		try {
-			const update = await req.json() as any;
-			
-			log.debug('Webhook update received', { 
-				updateId: update.update_id,
-				hasMessage: !!update.message,
-				hasCallback: !!update.callback_query,
-				messageText: update.message?.text?.substring(0, 50),
-				callbackData: update.callback_query?.data
-			});
-			
-			// Use AI bot for handling updates
-			return await aiBot.handleUpdate(update);
-		} catch (err) {
-			const error = err as Error;
-			log.error('Worker error', error, { 
-				path,
-				method: req.method,
-				contentType: req.headers.get('Content-Type')
-			});
-			const msg = error.message || "Error with query.";
-			return utils.toJSON(msg, 200);
-		}
-	},
-
-	async scheduled(event, env, ctx) {
-		console.log("cron processed");
-	},
+// Main handler function
+export default {
+  async fetch(request: Request, env: any, ctx: any): Promise<Response> {
+    try {
+      const url = new URL(request.url);
+      
+      // API endpoint để chat với AI
+      if (url.pathname === '/chat' && request.method === 'POST') {
+        const body = await request.json();
+        const { chatId, userId, username, message } = body;
+        
+        if (!chatId || !userId || !message) {
+          return new Response(JSON.stringify({ error: 'Missing required fields' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        
+        const response = await aiService.chat(chatId, userId, username || 'Anonymous', message);
+        
+        return new Response(JSON.stringify({ response }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // API endpoint để cập nhật system prompt
+      if (url.pathname === '/system-prompt' && request.method === 'POST') {
+        const body = await request.json();
+        const { chatId, systemPrompt, personalityTraits } = body;
+        
+        if (!chatId || !systemPrompt) {
+          return new Response(JSON.stringify({ error: 'Missing chatId or systemPrompt' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        
+        await aiService.updateSystemPrompt(chatId, systemPrompt, personalityTraits);
+        
+        return new Response(JSON.stringify({ success: true }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // API endpoint để lấy lịch sử chat
+      if (url.pathname === '/history' && request.method === 'GET') {
+        const chatId = url.searchParams.get('chatId');
+        const limit = parseInt(url.searchParams.get('limit') || '20');
+        
+        if (!chatId) {
+          return new Response(JSON.stringify({ error: 'Missing chatId' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+        
+        const history = await aiService.getChatHistory(chatId, limit);
+        
+        return new Response(JSON.stringify({ history }), {
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+      
+      // Welcome message
+      return new Response(JSON.stringify({ 
+        message: 'AI Chat Bot API',
+        endpoints: {
+          'POST /chat': 'Chat with AI',
+          'POST /system-prompt': 'Update system prompt',
+          'GET /history?chatId=xxx': 'Get chat history'
+        }
+      }), {
+        headers: { 'Content-Type': 'application/json' }
+      });
+      
+    } catch (error) {
+      console.error('Error:', error);
+      return new Response(JSON.stringify({ error: 'Internal server error' }), {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  },
 };
-
-// Export for discoverability
-export default worker;

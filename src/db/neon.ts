@@ -49,18 +49,10 @@ export default class NeonDB {
 		}
 		
 		switch (this.currentTable) {
-			case 'food_suggestions':
-				return schema.foodSuggestions;
-			case 'debts':
-				return schema.debts;
-			case 'chat_members':
-				return schema.chatMembers;
-			case 'conversation_messages':
-				return schema.conversationMessages;
-			case 'conversation_summaries':
-				return schema.conversationSummaries;
-			case 'user_memory':
-				return schema.userMemory;
+			case 'chat_history':
+				return schema.chatHistory;
+			case 'bot_personality':
+				return schema.botPersonality;
 			default:
 				throw new NeonError({ error: `Unknown table: ${this.currentTable}` });
 		}

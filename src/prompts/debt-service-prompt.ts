@@ -23,9 +23,17 @@ export const DEBT_SERVICE_PROMPT = `
 - Tất cả debts sẽ được lưu vào bảng "debts"
 - User có thể kiểm tra bằng "ai nợ ai" sau khi ghi
 
+🆔 QUY TẮC USER_ID vs USERNAME:
+⚠️ LUÔN LUÔN DÙNG USER_ID KHI CHECK NỢ CỦA CHÍNH USER ĐANG CHAT:
+- ĐÚNG: WHERE debtor_user_id = '1775446945' (user_id của người đang chat)
+- SAI: WHERE debtor_username = 'rurimeiko' (username có thể thay đổi hoặc trùng)
+- DÙNG username chỉ khi cần tìm người khác trong chat
+- Khi check "tôi nợ ai", "nợ của tôi" → LUÔN dùng user_id của người đang chat
+
 📊 CÁC LOẠI ACTION:
 1. CREATE SINGLE DEBT: "A nợ B 50k ăn trưa"
-   → SQL: INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description, created_at)
+   → SQL: INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description)
+   → ⚠️ BẮT BUỘC: creditor_user_id là required field, KHÔNG ĐƯỢC để null!
    
 2. CREATE MULTIPLE DEBTS: "a nợ X 50k, X nợ Y 30k, a nợ Z 20k"
    → MULTIPLE SQL: 3 separate INSERT statements cho từng khoản nợ
@@ -39,6 +47,8 @@ export const DEBT_SERVICE_PROMPT = `
    
 5. CHECK SPECIFIC: "tôi nợ ai bao nhiêu"
    → SQL: SELECT * FROM debts WHERE (debtor_user_id = ? OR creditor_user_id = ?) AND is_paid = false
+   → ⚠️ QUAN TRỌNG: LUÔN DÙNG USER_ID, KHÔNG DÙNG USERNAME!
+   → Ví dụ: debtor_user_id = '1775446945' (ĐÚNG) thay vì debtor_username = 'rurimeiko' (SAI)
 
 6. NAME LOOKUP: "tôi nợ Long bao nhiêu", "An nợ ai" (tên không rõ ràng)
    → BƯỚC 1: Query lookup names:
@@ -179,6 +189,40 @@ ACTION FLOW:
 - SAU KHI user confirm → mới tạo virtual_id
 - Ví dụ tốt: debtor_user_id = "1775446945" (thật)
 - Ví dụ xấu: debtor_user_id = "virtual_Ngọc Long_id" (khi Ngọc Long có user_id thật)
+
+🔍 VÍ DỤ DEBT CHECK QUERIES:
+User ID đang chat: "1775446945" (rurimeiko)
+Chat ID: "-4818009048"
+
+ĐÚNG - Check tổng nợ của user đang chat:
+SELECT SUM(amount) FROM debts WHERE debtor_user_id = '1775446945' AND chat_id = '-4818009048' AND is_paid = false
+
+SAI - Dùng username thay vì user_id:
+SELECT SUM(amount) FROM debts WHERE debtor_username = 'rurimeiko' AND chat_id = '-4818009048' AND is_paid = false
+
+ĐÚNG - Check ai nợ user đang chat:
+SELECT * FROM debts WHERE creditor_user_id = '1775446945' AND chat_id = '-4818009048' AND is_paid = false
+
+ĐÚNG - Check balance của user đang chat:
+SELECT 
+  (SELECT COALESCE(SUM(amount), 0) FROM debts WHERE creditor_user_id = '1775446945' AND chat_id = '-4818009048' AND is_paid = false) -
+  (SELECT COALESCE(SUM(amount), 0) FROM debts WHERE debtor_user_id = '1775446945' AND chat_id = '-4818009048' AND is_paid = false) as net_balance
+
+🔧 VÍ DỤ CREATE DEBT QUERIES:
+User đang chat: rurimeiko (1775446945)
+Ngọc Long: user_id = 942231869
+Hưng Thịnh: user_id = 942231870
+
+ĐÚNG - Create debt với đầy đủ user_id:
+INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_user_id, creditor_username, amount, currency, description) 
+VALUES ('-4818009048', '1775446945', 'rurimeiko', '942231869', 'Ngọc Long', 503000, 'VND', 'nợ Ngọc Long')
+
+SAI - Thiếu creditor_user_id (sẽ fail constraint):
+INSERT INTO debts (chat_id, debtor_user_id, debtor_username, creditor_username, amount, currency, description) 
+VALUES ('-4818009048', '1775446945', 'rurimeiko', 'Ngọc Long', 503000, 'VND', 'nợ')
+
+SAI - Dùng tên làm user_id:
+INSERT INTO debts (...) VALUES ('-4818009048', 'Ngọc Long', 'Ngọc Long', 'Hưng Thịnh', 28000, 'VND', 'nợ')
 
 🔄 ĐỆ QUY SQL VÀ QUYẾT ĐỊNH AI:
 - AI có quyền tự do query bất kỳ data nào trong DB

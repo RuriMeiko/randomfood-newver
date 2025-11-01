@@ -180,7 +180,7 @@ export class AIBotService {
         const needsRecursion = aiResponse.needsRecursion || 
                               aiResponse.needsContinuation ||
                               aiResponse.actionType === 'context_query' ||
-                              (aiResponse.actionType === 'debt_tracking' && aiResponse.sql.toLowerCase().includes('select'));
+                              (aiResponse.actionType === 'debt_tracking' && aiResponse.sql && aiResponse.sql.toLowerCase().includes('select'));
         
         log.info('🔍 ENHANCED RECURSIVE AI ANALYSIS', {
           userId, chatId,
