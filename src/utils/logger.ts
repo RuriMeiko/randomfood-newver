@@ -152,7 +152,7 @@ export const logger = Logger.getInstance();
 export const log = {
   debug: (message: string, data?: any) => logger.debug(message, data),
   info: (message: string, data?: any) => logger.info(message, data),
-  warn: (message: string, data?: any) => logger.warn(message, data),
+  warn: (message: string, data?: any, p0?: { userId: string; aiResponseText: any; }) => logger.warn(message, data),
   error: (message: string, error?: Error, data?: any) => logger.error(message, error, data),
   
   // Specialized loggers

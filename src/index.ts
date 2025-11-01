@@ -1,11 +1,9 @@
 import * as utils from "@/utils";
-import NeonDB from "@/db/neon";
-import { AIFoodDebtBot } from "@/bot/ai-bot";
+import { SimpleChatBot } from "@/bot/simple-bot";
 import { log, LogLevel, logger } from "@/utils/logger";
 
 // The Worker's environment bindings
 interface Bindings {
-	DATABASE_URL: string;
 	API_TELEGRAM: string;
 	GEMINI_API_KEY: string;
 }
@@ -23,14 +21,8 @@ const worker: ExportedHandler<Bindings> = {
 			userAgent: req.headers.get('User-Agent')?.substring(0, 50) 
 		});
 
-		// Initialize database
-		const database = new NeonDB({
-			connectionString: env.DATABASE_URL,
-		});
-
-		// Initialize AI Food & Debt Bot with Gemini 2.0 Flash
-		const aiBot = new AIFoodDebtBot({
-			database: database,
+		// Initialize Simple Chat Bot with Gemini 2.0 Flash
+		const simpleBot = new SimpleChatBot({
 			telegramToken: env.API_TELEGRAM,
 			geminiApiKey: env.GEMINI_API_KEY,
 		});
@@ -55,8 +47,8 @@ const worker: ExportedHandler<Bindings> = {
 				callbackData: update.callback_query?.data
 			});
 			
-			// Use AI bot for handling updates
-			return await aiBot.handleUpdate(update);
+			// Use simple bot for handling updates
+			return await simpleBot.handleUpdate(update);
 		} catch (err) {
 			const error = err as Error;
 			log.error('Worker error', error, { 
