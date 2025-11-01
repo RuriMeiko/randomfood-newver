@@ -1,14 +1,14 @@
 import { GoogleGenAI, Type } from '@google/genai';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
-import { 
-  tgUsers, 
-  tgGroups, 
-  debts, 
-  nameAliases, 
-  chatSessions, 
+import {
+  tgUsers,
+  tgGroups,
+  debts,
+  nameAliases,
+  chatSessions,
   chatMessages,
-  actionLogs 
+  actionLogs
 } from './db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
@@ -37,10 +37,10 @@ export interface TelegramMessage {
 export class AIBot {
   private genAI: GoogleGenAI;
   private db: ReturnType<typeof drizzle>;
-  
+
   constructor(apiKey: string, databaseUrl: string) {
-    this.genAI = new GoogleGenAI(apiKey);
-    
+    this.genAI = new GoogleGenAI({ apiKey: apiKey });
+
     // Initialize database connection
     const sql = neon(databaseUrl);
     this.db = drizzle(sql);
@@ -49,16 +49,16 @@ export class AIBot {
   async processMessage(message: TelegramMessage): Promise<string> {
     try {
       console.log('🤖 [AIBot] Processing message:', message.text);
-      
+
       // 1. Đảm bảo user và group tồn tại trong database
       console.log('📝 [AIBot] Step 1: Ensuring user and group exist...');
       await this.ensureUserAndGroup(message);
-      
+
       // 2. Tạo context cho AI từ database
       console.log('🧠 [AIBot] Step 2: Building context from database...');
       const context = await this.buildContext(message);
       console.log('📄 [AIBot] Context built, length:', context.length);
-      
+
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
       const aiResponse = await this.analyzeAndExecute(message.text, context);
@@ -67,14 +67,14 @@ export class AIBot {
         hasSQL: !!aiResponse.sqlQuery,
         responseLength: aiResponse.response.length
       });
-      
+
       // 4. Lưu conversation
       console.log('💾 [AIBot] Step 4: Saving conversation...');
       await this.saveConversation(message, aiResponse);
-      
+
       console.log('✅ [AIBot] Message processed successfully');
       return aiResponse.response;
-      
+
     } catch (error) {
       console.error('❌ [AIBot] Error processing message:', error);
       return 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.';
@@ -118,7 +118,7 @@ export class AIBot {
   private async buildContext(message: TelegramMessage): Promise<string> {
     const userId = await this.getUserId(message.from.id);
     const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
-    
+
     // Lấy lịch sử chat gần đây
     const recentMessages = await this.db
       .select({
@@ -176,16 +176,16 @@ Chat: ${message.chat.type === 'private' ? 'Private' : message.chat.title}
 ${recentMessages.map(msg => `${msg.sender}: ${msg.messageText}`).join('\n')}
 
 === NỢ HIỆN TẠI ===
-${currentDebts.length > 0 ? 
-  currentDebts.map(debt => `User ${debt.borrowerId} nợ User ${debt.lenderId}: ${debt.amount}${debt.currency}`).join('\n') :
-  'Không có nợ nào.'
-}
+${currentDebts.length > 0 ?
+        currentDebts.map(debt => `User ${debt.borrowerId} nợ User ${debt.lenderId}: ${debt.amount}${debt.currency}`).join('\n') :
+        'Không có nợ nào.'
+      }
 
 === TÊN GỌI ĐÃ HỌC ===
 ${aliases.length > 0 ?
-  aliases.map(alias => `"${alias.aliasText}" -> User ID ${alias.refUserId}`).join('\n') :
-  'Chưa có tên gọi nào được học.'
-}
+        aliases.map(alias => `"${alias.aliasText}" -> User ID ${alias.refUserId}`).join('\n') :
+        'Chưa có tên gọi nào được học.'
+      }
     `.trim();
 
     return context;
@@ -408,40 +408,48 @@ ${context}
         config,
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
       });
-      
-      let responseText = '';
-      for await (const chunk of result) {
-        responseText += chunk.text;
-      }
-      
+
+      const responseText = result.response.candidates[0].content.parts[0].text;
+      console.log('🤖 [AI] Raw response:', responseText);
+
       // Parse JSON response
       const parsed = JSON.parse(responseText);
-      
+      console.log('🤖 [AI] Parsed response:', parsed);
+
       // Thực thi SQL nếu có
       if (parsed.sql && parsed.sql.length > 0) {
         for (const sqlItem of parsed.sql) {
           await this.executeSqlQuery(sqlItem.query, sqlItem.params || []);
         }
       }
-      
+
       // Tạo response text từ messages
       let responseMsg = '';
       if (parsed.messages && parsed.messages.length > 0) {
         responseMsg = parsed.messages.map(msg => msg.text).join(' ');
       }
-      
+
       return {
         response: responseMsg || 'Xin lỗi, tôi không hiểu.',
         intent: parsed.type,
         sqlQuery: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].query : undefined,
         sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
       };
-      
+
     } catch (error) {
-      console.error('Error in AI analysis:', error);
+      console.error('❌ [AI] Error in AI analysis:', error);
+      console.error('❌ [AI] Error details:', error.message);
       
-      // Fallback: Phân tích đơn giản bằng keyword
-      return await this.simpleKeywordAnalysis(userMessage, context);
+      // Không dùng fallback nữa, luôn cần AI trả về JSON chuẩn
+      
+      // Nếu là JSON parse error hoặc lỗi khác, thử return response đơn giản
+      console.log('⚠️ [AI] Returning simple response due to parsing error');
+      return {
+        response: 'ơ e bị lỗi rồi, thử lại được không nè 🥺',
+        intent: 'error',
+        sqlQuery: undefined,
+        sqlParams: undefined,
+      };
     }
   }
 
@@ -449,16 +457,16 @@ ${context}
     try {
       // Chỉ cho phép SELECT, INSERT, UPDATE an toàn
       const safeQuery = query.toLowerCase().trim();
-      if (!safeQuery.startsWith('select') && 
-          !safeQuery.startsWith('insert') && 
-          !safeQuery.startsWith('update')) {
+      if (!safeQuery.startsWith('select') &&
+        !safeQuery.startsWith('insert') &&
+        !safeQuery.startsWith('update')) {
         throw new Error('Unsafe SQL query');
       }
-      
+
       // Execute query với drizzle
       // Note: Cần implement proper SQL execution với drizzle
       console.log('Executing SQL:', query, params);
-      
+
     } catch (error) {
       console.error('SQL execution error:', error);
     }
@@ -470,7 +478,7 @@ ${context}
         await this.recordDebt(debt);
       }
     }
-    
+
     if (data.names) {
       for (const name of data.names) {
         await this.learnName(name.alias, name.real_name);
@@ -487,7 +495,7 @@ ${context}
     try {
       const lenderId = await this.findOrCreateUserByName(debtInfo.lender);
       const borrowerId = await this.findOrCreateUserByName(debtInfo.borrower);
-      
+
       if (lenderId && borrowerId) {
         await this.db.insert(debts).values({
           lenderId,
@@ -528,31 +536,6 @@ ${context}
     // TODO: Implement name learning logic
   }
 
-  private async simpleKeywordAnalysis(userMessage: string, context: string): Promise<{
-    response: string;
-    intent?: string;
-  }> {
-    const message = userMessage.toLowerCase();
-    
-    if (message.includes('nợ') || message.includes('ghi nợ')) {
-      return {
-        response: 'Tôi hiểu bạn muốn ghi nợ. Bạn có thể nói rõ hơn ai nợ ai bao nhiêu không?',
-        intent: 'debt_record'
-      };
-    }
-    
-    if (message.includes('ai nợ ai') || message.includes('kiểm tra nợ')) {
-      return {
-        response: 'Đang kiểm tra thông tin nợ...',
-        intent: 'debt_query'
-      };
-    }
-    
-    return {
-      response: 'Xin chào! Tôi có thể giúp bạn quản lý nợ và tài chính. Hãy thử nói "ghi nợ" hoặc "ai nợ ai".',
-      intent: 'chat'
-    };
-  }
 
   private async getUserId(tgId: number): Promise<number> {
     const user = await this.db
@@ -560,7 +543,7 @@ ${context}
       .from(tgUsers)
       .where(eq(tgUsers.tgId, tgId))
       .limit(1);
-    
+
     return user[0]?.id || 0;
   }
 
@@ -570,7 +553,7 @@ ${context}
       .from(tgGroups)
       .where(eq(tgGroups.tgChatId, tgChatId))
       .limit(1);
-    
+
     return group[0]?.id || null;
   }
 
@@ -578,7 +561,7 @@ ${context}
     try {
       const userId = await this.getUserId(message.from.id);
       const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
-      
+
       // Tìm hoặc tạo session
       let session = await this.db
         .select()
