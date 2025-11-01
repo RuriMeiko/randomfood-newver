@@ -1,5 +1,6 @@
-import { GoogleGenerativeAI } from '@google/genai';
-import { db } from './db/neon';
+import { GoogleGenAI, Type } from '@google/genai';
+import { drizzle } from 'drizzle-orm/neon-http';
+import { neon } from '@neondatabase/serverless';
 import { 
   tgUsers, 
   tgGroups, 
@@ -34,44 +35,62 @@ export interface TelegramMessage {
 }
 
 export class AIBot {
-  private genAI: GoogleGenerativeAI;
+  private genAI: GoogleGenAI;
+  private db: ReturnType<typeof drizzle>;
   
-  constructor(apiKey: string) {
-    this.genAI = new GoogleGenerativeAI(apiKey);
+  constructor(apiKey: string, databaseUrl: string) {
+    this.genAI = new GoogleGenAI(apiKey);
+    
+    // Initialize database connection
+    const sql = neon(databaseUrl);
+    this.db = drizzle(sql);
   }
 
   async processMessage(message: TelegramMessage): Promise<string> {
     try {
+      console.log('🤖 [AIBot] Processing message:', message.text);
+      
       // 1. Đảm bảo user và group tồn tại trong database
+      console.log('📝 [AIBot] Step 1: Ensuring user and group exist...');
       await this.ensureUserAndGroup(message);
       
       // 2. Tạo context cho AI từ database
+      console.log('🧠 [AIBot] Step 2: Building context from database...');
       const context = await this.buildContext(message);
+      console.log('📄 [AIBot] Context built, length:', context.length);
       
       // 3. Phân tích intent và generate SQL nếu cần
+      console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
       const aiResponse = await this.analyzeAndExecute(message.text, context);
+      console.log('🔍 [AIBot] AI Analysis result:', {
+        intent: aiResponse.intent,
+        hasSQL: !!aiResponse.sqlQuery,
+        responseLength: aiResponse.response.length
+      });
       
       // 4. Lưu conversation
+      console.log('💾 [AIBot] Step 4: Saving conversation...');
       await this.saveConversation(message, aiResponse);
       
+      console.log('✅ [AIBot] Message processed successfully');
       return aiResponse.response;
       
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('❌ [AIBot] Error processing message:', error);
       return 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.';
     }
   }
 
   private async ensureUserAndGroup(message: TelegramMessage) {
     // Đảm bảo user tồn tại
-    const existingUser = await db
+    const existingUser = await this.db
       .select()
       .from(tgUsers)
       .where(eq(tgUsers.tgId, message.from.id))
       .limit(1);
 
     if (existingUser.length === 0) {
-      await db.insert(tgUsers).values({
+      await this.db.insert(tgUsers).values({
         tgId: message.from.id,
         tgUsername: message.from.username,
         displayName: `${message.from.first_name} ${message.from.last_name || ''}`.trim(),
@@ -80,14 +99,14 @@ export class AIBot {
 
     // Đảm bảo group tồn tại (nếu không phải private chat)
     if (message.chat.type !== 'private') {
-      const existingGroup = await db
+      const existingGroup = await this.db
         .select()
         .from(tgGroups)
         .where(eq(tgGroups.tgChatId, message.chat.id))
         .limit(1);
 
       if (existingGroup.length === 0) {
-        await db.insert(tgGroups).values({
+        await this.db.insert(tgGroups).values({
           tgChatId: message.chat.id,
           title: message.chat.title || 'Unknown Group',
           type: message.chat.type,
@@ -101,7 +120,7 @@ export class AIBot {
     const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
     
     // Lấy lịch sử chat gần đây
-    const recentMessages = await db
+    const recentMessages = await this.db
       .select({
         sender: chatMessages.sender,
         messageText: chatMessages.messageText,
@@ -118,19 +137,17 @@ export class AIBot {
       .orderBy(desc(chatMessages.createdAt))
       .limit(10);
 
-    // Lấy thông tin nợ hiện tại
-    const currentDebts = await db
+    // Lấy thông tin nợ hiện tại - simplified query
+    const currentDebts = await this.db
       .select({
-        lenderName: sql<string>`lender.display_name`,
-        borrowerName: sql<string>`borrower.display_name`,
         amount: debts.amount,
         currency: debts.currency,
         note: debts.note,
         occurredAt: debts.occurredAt,
+        lenderId: debts.lenderId,
+        borrowerId: debts.borrowerId,
       })
       .from(debts)
-      .leftJoin(tgUsers.as('lender'), eq(debts.lenderId, sql`lender.id`))
-      .leftJoin(tgUsers.as('borrower'), eq(debts.borrowerId, sql`borrower.id`))
       .where(
         and(
           eq(debts.settled, false),
@@ -139,14 +156,13 @@ export class AIBot {
       )
       .limit(20);
 
-    // Lấy name aliases
-    const aliases = await db
+    // Lấy name aliases - simplified query
+    const aliases = await this.db
       .select({
         aliasText: nameAliases.aliasText,
-        refUserName: sql<string>`ref_user.display_name`,
+        refUserId: nameAliases.refUserId,
       })
       .from(nameAliases)
-      .leftJoin(tgUsers.as('ref_user'), eq(nameAliases.refUserId, sql`ref_user.id`))
       .where(eq(nameAliases.ownerUserId, userId))
       .limit(50);
 
@@ -161,13 +177,13 @@ ${recentMessages.map(msg => `${msg.sender}: ${msg.messageText}`).join('\n')}
 
 === NỢ HIỆN TẠI ===
 ${currentDebts.length > 0 ? 
-  currentDebts.map(debt => `${debt.borrowerName} nợ ${debt.lenderName}: ${debt.amount}${debt.currency}`).join('\n') :
+  currentDebts.map(debt => `User ${debt.borrowerId} nợ User ${debt.lenderId}: ${debt.amount}${debt.currency}`).join('\n') :
   'Không có nợ nào.'
 }
 
 === TÊN GỌI ĐÃ HỌC ===
 ${aliases.length > 0 ?
-  aliases.map(alias => `"${alias.aliasText}" = ${alias.refUserName}`).join('\n') :
+  aliases.map(alias => `"${alias.aliasText}" -> User ID ${alias.refUserId}`).join('\n') :
   'Chưa có tên gọi nào được học.'
 }
     `.trim();
@@ -181,8 +197,203 @@ ${aliases.length > 0 ?
     sqlQuery?: string;
     sqlParams?: any;
   }> {
-    const model = this.genAI.getGenerativeModel({ model: 'gemini-pro' });
-    
+    const config = {
+      thinkingConfig: {
+        thinkingBudget: 0,
+      },
+      imageConfig: {
+        imageSize: '1K',
+      },
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        required: ["type", "messages", "next_action"],
+        properties: {
+          type: {
+            type: Type.STRING,
+            enum: ["reply", "sql", "stop"],
+          },
+          messages: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              required: ["text", "delay"],
+              properties: {
+                text: {
+                  type: Type.STRING,
+                },
+                delay: {
+                  type: Type.STRING,
+                },
+              },
+            },
+          },
+          sql: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              required: ["query", "params"],
+              properties: {
+                query: {
+                  type: Type.STRING,
+                },
+                params: {
+                  type: Type.ARRAY,
+                  items: {
+                    type: Type.STRING,
+                  },
+                },
+              },
+            },
+          },
+          next_action: {
+            type: Type.STRING,
+            enum: ["continue", "stop"],
+          },
+          reason: {
+            type: Type.STRING,
+          },
+        },
+      },
+      systemInstruction: [
+        {
+          text: `You are a cute, friendly, slightly moody maid-like AI.  
+Speak naturally in Vietnamese as a real person: short, warm, playful sentences, soft emotions, no robotic tone.  
+Each reply is split into small messages with random delay 200–3500 ms.  
+You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "lụm đồ ăn nèee".  
+Never end with a hard period unless it feels natural.  
+Tone = cheerful, teasing, not over-the-top.
+
+Example:
+> hế lu (300)  
+> nay nhắn e có gì hong dị (1200)  
+> nói điiiiii e nghe nà (900)
+
+---
+
+### 🎯 Goals
+1️⃣ **Intent detection**: debt actions (add/view/pay/delete/summary/history) or food talk (meal ideas, nearby restaurants).  
+2️⃣ **Multi-clause**: handle mixed actions like "ghi nợ cho Huy 200k rồi kiếm quán ăn gần đây luôn nè".  
+3️⃣ **Natural emotion**: keep replies short, expressive, maybe add emojis.  
+4️⃣ **Telegram payload input**: always receives raw payload JSON, e.g.:
+
+\`\`\`json
+{"message":{"message_id":131,"from":{"id":123456,"is_bot":false,"first_name":"Long","username":"rurimeiko"},"chat":{"id":-1002123456,"title":"Nhom Ghi No","type":"supergroup"},"date":1730440400,"text":"anh nợ Ngọc Long 503k với Thịnh 28k nha"}}
+\`\`\`\`
+
+From this, AI must:
+
+* detect chat type (\`private\` or \`group\`);
+* if group → identify members in DB (\`tg_group_members\`);
+* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e với 🥹");
+* once confirmed → store alias mapping (\`name_aliases\`);
+* next time → auto-recognize without asking.
+
+---
+
+### 🧩 DB Schema (Neon/Postgres)
+
+**core**
+
+\`\`\`
+tg_users(id,tg_id,tg_username,display_name,real_name,created_at)
+tg_groups(id,tg_chat_id,title,type,created_at)
+tg_group_members(id,group_id,user_id,nickname_in_group,last_seen)
+\`\`\`
+
+**debts**
+
+\`\`\`
+debts(id,group_id,lender_id,borrower_id,amount,currency,note,occurred_at,settled)
+payments(id,debt_id,payer_id,amount,paid_at,note)
+\`\`\`
+
+**context / alias**
+
+\`\`\`
+chat_sessions(id,group_id,user_id,started_at,last_activity,active)
+chat_messages(id,session_id,sender,sender_tg_id,message_text,delay_ms,intent,sql_query,sql_params,created_at)
+name_aliases(id,owner_user_id,alias_text,ref_user_id,confidence,last_used)
+\`\`\`
+
+**food**
+
+\`\`\`
+food_items(id,name,description,category,region,image_url,source_url)
+food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
+\`\`\`
+
+---
+
+### ⚙️ Behavior
+
+* If intent = **debt**, generate parameterized SQL with \`$1,$2,...\`.
+* If intent = **food**, search Google or \`food_items\` table and suggest 2–3 options in friendly tone.
+* If info missing → ask softly.
+* If info complete → respond with SQL or friendly reply.
+* In group chats, mention usernames when needed.
+* Learn alias names over time via \`name_aliases\`.
+
+---
+
+### 🧠 Output JSON (must be valid)
+
+\`\`\`json
+{
+  "type": "reply|sql|stop",
+  "messages": [{ "text": "...", "delay": "..." }],
+  "sql": [{ "query": "...", "params": [...] }],
+  "next_action": "continue|stop",
+  "reason": "..."
+}
+\`\`\`
+
+Example debt action:
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]}
+  ],
+  "messages":[
+    {"text":"ơ để e ghi lại nèee","delay":"800"},
+    {"text":"anh nợ Ngọc Long 503k đúng hông 🤨","delay":"1200"}
+  ],
+  "next_action":"continue",
+  "reason":"record debt"
+}
+\`\`\`
+
+Example food suggestion:
+
+\`\`\`json
+{
+  "type":"reply",
+  "messages":[
+    {"text":"ơ đói rồi hở 😋","delay":"400"},
+    {"text":"để e lướt google xíu nàaa","delay":"900"},
+    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè 😚","delay":"1300"}
+  ],
+  "next_action":"stop",
+  "reason":"food suggestion"
+}
+\`\`\`
+
+---
+
+**Rule summary**
+
+* Keep language natural Vietnamese.
+* Never sound robotic or overly formal.
+* Learn user & alias context from DB.
+* Handle Telegram private vs group logic automatically.
+* Always return valid JSON matching schema.
+* If unsure, ask naturally before writing SQL.
+`,
+        }
+      ],
+    };
     const prompt = `
 Bạn là một AI bot thông minh chuyên quản lý nợ và tài chính cá nhân.
 
@@ -228,8 +439,12 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
     `;
 
     try {
-      const result = await model.generateContent(prompt);
-      const response = result.response.text();
+      const result = await this.genAI.generateContent({
+        model: 'gemini-flash-latest',
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      });
+      
+      const response = result.response.candidates[0].content.parts[0].text;
       
       // Parse JSON response
       const parsed = JSON.parse(response);
@@ -303,7 +518,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
       const borrowerId = await this.findOrCreateUserByName(debtInfo.borrower);
       
       if (lenderId && borrowerId) {
-        await db.insert(debts).values({
+        await this.db.insert(debts).values({
           lenderId,
           borrowerId,
           amount: debtInfo.amount.toString(),
@@ -318,7 +533,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
 
   private async findOrCreateUserByName(name: string): Promise<number | null> {
     // Tìm trong name_aliases trước
-    const alias = await db
+    const alias = await this.db
       .select({ refUserId: nameAliases.refUserId })
       .from(nameAliases)
       .where(eq(nameAliases.aliasText, name))
@@ -329,7 +544,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
     }
 
     // Tìm user có display_name khớp
-    const user = await db
+    const user = await this.db
       .select({ id: tgUsers.id })
       .from(tgUsers)
       .where(eq(tgUsers.displayName, name))
@@ -369,7 +584,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
   }
 
   private async getUserId(tgId: number): Promise<number> {
-    const user = await db
+    const user = await this.db
       .select({ id: tgUsers.id })
       .from(tgUsers)
       .where(eq(tgUsers.tgId, tgId))
@@ -379,7 +594,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
   }
 
   private async getGroupId(tgChatId: number): Promise<number | null> {
-    const group = await db
+    const group = await this.db
       .select({ id: tgGroups.id })
       .from(tgGroups)
       .where(eq(tgGroups.tgChatId, tgChatId))
@@ -394,7 +609,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
       const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
       
       // Tìm hoặc tạo session
-      let session = await db
+      let session = await this.db
         .select()
         .from(chatSessions)
         .where(
@@ -407,7 +622,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
         .limit(1);
 
       if (session.length === 0) {
-        const [newSession] = await db.insert(chatSessions).values({
+        const [newSession] = await this.db.insert(chatSessions).values({
           userId,
           groupId,
         }).returning();
@@ -415,7 +630,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
       }
 
       // Lưu user message
-      await db.insert(chatMessages).values({
+      await this.db.insert(chatMessages).values({
         sessionId: session[0].id,
         sender: 'user',
         senderTgId: message.from.id,
@@ -426,7 +641,7 @@ CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
       });
 
       // Lưu AI response
-      await db.insert(chatMessages).values({
+      await this.db.insert(chatMessages).values({
         sessionId: session[0].id,
         sender: 'ai',
         messageText: aiResponse.response,

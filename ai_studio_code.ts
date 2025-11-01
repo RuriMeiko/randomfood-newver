@@ -220,7 +220,7 @@ Example food suggestion:
     },
   ];
 
-  const response = await ai.models.generateContentStream({
+  const response = await ai.models.generateContent({
     model,
     config,
     contents,
