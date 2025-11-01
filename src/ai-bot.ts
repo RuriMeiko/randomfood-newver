@@ -395,75 +395,46 @@ Example food suggestion:
       ],
     };
     const prompt = `
-Bạn là một AI bot thông minh chuyên quản lý nợ và tài chính cá nhân.
+TELEGRAM PAYLOAD:
+${JSON.stringify({ message: { text: userMessage } })}
 
-NGỮ CẢNH:
+CONTEXT FROM DATABASE:
 ${context}
-
-TIN NHẮN USER: "${userMessage}"
-
-HÃY PHÂN TÍCH VÀ XỬ LÝ:
-
-1. XÁC ĐỊNH INTENT:
-- debt_record: Ghi nợ mới (ví dụ: "A nợ B 100k", "ghi nợ")
-- debt_query: Tra cứu nợ (ví dụ: "ai nợ ai", "kiểm tra nợ")  
-- debt_settle: Trả nợ (ví dụ: "A trả B 50k", "thanh toán")
-- name_learn: Học tên mới (ví dụ: "Thịnh là Nguyễn Văn Thịnh")
-- chat: Trò chuyện thông thường
-
-2. NẾU LÀ debt_record:
-- Trích xuất thông tin: ai nợ ai, bao nhiêu tiền
-- Tạo SQL INSERT để lưu vào bảng debts
-- Học tên mới nếu chưa biết
-
-3. NẾU LÀ debt_query:
-- Tạo SQL SELECT để lấy thông tin nợ
-- Tổng hợp và hiển thị kết quả
-
-4. NẾU LÀ name_learn:
-- Tạo SQL INSERT vào bảng name_aliases
-
-TRẢ VỀ JSON FORMAT:
-{
-  "intent": "debt_record|debt_query|debt_settle|name_learn|chat",
-  "response": "Câu trả lời cho user",
-  "sql_query": "SQL query nếu cần",
-  "sql_params": {"param1": "value1"},
-  "extracted_data": {
-    "debts": [{"lender": "tên", "borrower": "tên", "amount": số, "currency": "VND"}],
-    "names": [{"alias": "tên gọi", "real_name": "tên thật"}]
-  }
-}
-
-CHỈ TRẢ VỀ JSON, KHÔNG CÓ TEXT KHÁC.
-    `;
+`;
 
     try {
-      const result = await this.genAI.generateContent({
+      const result = await this.genAI.models.generateContent({
         model: 'gemini-flash-latest',
+        config,
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
       });
       
-      const response = result.response.candidates[0].content.parts[0].text;
-      
-      // Parse JSON response
-      const parsed = JSON.parse(response);
-      
-      // Thực thi SQL nếu có
-      if (parsed.sql_query) {
-        await this.executeSqlQuery(parsed.sql_query, parsed.sql_params || {});
+      let responseText = '';
+      for await (const chunk of result) {
+        responseText += chunk.text;
       }
       
-      // Xử lý các extraction data
-      if (parsed.extracted_data) {
-        await this.processExtractedData(parsed.extracted_data, parsed.intent);
+      // Parse JSON response
+      const parsed = JSON.parse(responseText);
+      
+      // Thực thi SQL nếu có
+      if (parsed.sql && parsed.sql.length > 0) {
+        for (const sqlItem of parsed.sql) {
+          await this.executeSqlQuery(sqlItem.query, sqlItem.params || []);
+        }
+      }
+      
+      // Tạo response text từ messages
+      let responseMsg = '';
+      if (parsed.messages && parsed.messages.length > 0) {
+        responseMsg = parsed.messages.map(msg => msg.text).join(' ');
       }
       
       return {
-        response: parsed.response,
-        intent: parsed.intent,
-        sqlQuery: parsed.sql_query,
-        sqlParams: parsed.sql_params,
+        response: responseMsg || 'Xin lỗi, tôi không hiểu.',
+        intent: parsed.type,
+        sqlQuery: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].query : undefined,
+        sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
       };
       
     } catch (error) {
