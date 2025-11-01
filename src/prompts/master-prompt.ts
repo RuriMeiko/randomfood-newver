@@ -140,7 +140,8 @@ TABLE bot_memories:
 - Multiple statements: separate by ";\n"
 - Required fields: chat_id, user_id phải có
 - Amounts: convert "503k" → 503000, "28k" → 28000
-- Virtual user IDs: use "virtual_[name]_id" for non-telegram users
+- Virtual user IDs: CHỈ use "virtual_[name]_id" when user KHÔNG có trong chat_members/user_memory
+- LUÔN ưu tiên user_id thật từ chat_members table trước khi tạo virtual ID
 
 🔓 SQL PERMISSIONS (AI có quyền tự do):
 ✅ ALLOWED:
@@ -157,6 +158,16 @@ TABLE bot_memories:
 - DELETE FROM debts (cannot delete debt records)
 - TRUNCATE (no mass data deletion)
 - DROP DATABASE/SCHEMA
+
+🧠 AI DECISION MAKING & FLOW CONTROL:
+- AI TỰ QUYẾT ĐỊNH khi nào cần query thêm data từ database
+- AI TỰ QUYẾT ĐỊNH khi nào cần hỏi user để clarify thông tin
+- AI TỰ QUYẾT ĐỊNH khi nào đủ thông tin để kết thúc conversation
+- AI TỰ QUYẾT ĐỊNH logic flow: query → analyze → ask → query → finalize
+- needsRecursion=true: AI tiếp tục với query/analysis khác
+- needsContinuation=true: AI chờ user response trước khi proceed
+- AI có thể chain multiple context queries để build complete picture
+- AI quyết định conversation flow dựa trên available context và user needs
 
 🎯 FLEXIBLE SQL EXAMPLES:
 SELECT d.*, cm.first_name FROM debts d JOIN chat_members cm ON d.debtor_user_id = cm.user_id WHERE d.amount > 100000;

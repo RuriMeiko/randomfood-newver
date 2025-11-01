@@ -68,6 +68,9 @@ export class AIBotService {
       const chatMembers = await this.getChatMembers(chatId);
       const memberUsernames = chatMembers.map(m => m.username || m.firstName || m.userId).filter(Boolean);
 
+      // 🧠 Load user information from user_memory table
+      const userInfo = await this.loadUserInfoFromMemory(userId);
+
       // Get conversation context from database
       const context = await this.conversationContext.getConversationContext(chatId, userId);
       
@@ -76,11 +79,33 @@ export class AIBotService {
         messageCount: context.messages.length,
         summaryCount: context.summaries.length,
         totalTokens: context.totalTokens,
-        contextStatus: context.contextStatus
+        contextStatus: context.contextStatus,
+        hasUserMemory: userInfo.hasMemory
       });
 
-      // Prepare basic enriched context (AI will query additional data as needed)
-      const enrichedContext = { ...context };
+      // Prepare enriched context with user information
+      const enrichedContext = { 
+        ...context,
+        userInfo: {
+          memory: userInfo.userMemory,
+          chatMember: userInfo.chatMemberInfo,
+          hasStoredMemory: userInfo.hasMemory,
+          // Create a summary of available user info for AI
+          availableInfo: userInfo.hasMemory ? {
+            realName: userInfo.userMemory?.realName,
+            preferredName: userInfo.userMemory?.preferredName,
+            aliases: userInfo.userMemory?.aliases,
+            personalInfo: userInfo.userMemory?.personalInfo,
+            foodPreferences: userInfo.userMemory?.foodPreferences,
+            eatingHabits: userInfo.userMemory?.eatingHabits,
+            personalityTraits: userInfo.userMemory?.personalityTraits,
+            interests: userInfo.userMemory?.interests,
+            chatPatterns: userInfo.userMemory?.chatPatterns,
+            socialConnections: userInfo.userMemory?.socialConnections,
+            communicationStyle: userInfo.userMemory?.communicationStyle
+          } : null
+        }
+      };
 
       // Prepare Telegram data for AI
       const telegramData = telegramMessage ? {
@@ -264,8 +289,8 @@ export class AIBotService {
         return param;
       });
 
-      // Check if this is multiple SQL statements (separated by ;\n)
-      const sqlStatements = sql.split(';\n').filter(s => s.trim().length > 0);
+      // Check if this is multiple SQL statements (separated by semicolons)
+      const sqlStatements = sql.split(';').map(s => s.trim()).filter(s => s.length > 0);
       
       if (sqlStatements.length > 1) {
         log.info('🔄 EXECUTING MULTIPLE SQL STATEMENTS', { 
@@ -275,26 +300,61 @@ export class AIBotService {
         });
 
         const results = [];
-        let paramIndex = 0;
 
+        // Build parameter index mapping from original SQL
+        const allParameterMatches = sql.match(/\$(\d+)/g) || [];
+        const allParameterNumbers = allParameterMatches.map(p => parseInt(p.substring(1)));
+        const uniqueAllParams = [...new Set(allParameterNumbers)].sort((a, b) => a - b);
+        
+        // Create mapping from parameter number to actual value
+        const parameterValueMap: { [key: number]: any } = {};
+        uniqueAllParams.forEach((paramNum, index) => {
+          parameterValueMap[paramNum] = processedParams[index];
+        });
+        
+        log.info(`📋 Parameter mapping created`, {
+          userId, chatId,
+          totalParams: processedParams.length,
+          uniqueParams: uniqueAllParams,
+          parameterValueMap: parameterValueMap
+        });
+        
         for (let i = 0; i < sqlStatements.length; i++) {
-          const statement = sqlStatements[i].trim();
+          let statement = sqlStatements[i].trim();
           
-          // Count parameters in this statement  
-          const paramCount = (statement.match(/\$\d+/g) || []).length;
-          const stmtParams = processedParams.slice(paramIndex, paramIndex + paramCount);
+          // Find parameters used in this statement
+          const stmtParamMatches = statement.match(/\$(\d+)/g) || [];
+          const stmtParamNumbers = stmtParamMatches.map(p => parseInt(p.substring(1)));
+          const uniqueStmtParams = [...new Set(stmtParamNumbers)].sort((a, b) => a - b);
           
-          log.info(`Executing statement ${i + 1}/${sqlStatements.length}`, {
+          // Get actual parameter values for this statement
+          const stmtParams = uniqueStmtParams.map(paramNum => parameterValueMap[paramNum]);
+          
+          // Renumber parameters in statement to start from $1
+          let normalizedStatement = statement;
+          uniqueStmtParams.forEach((originalNum, index) => {
+            const regex = new RegExp(`\\$${originalNum}\\b`, 'g');
+            normalizedStatement = normalizedStatement.replace(regex, `$${index + 1}`);
+          });
+          
+          log.info(`🔧 Executing statement ${i + 1}/${sqlStatements.length}`, {
             userId, chatId,
             statement: statement.substring(0, 80) + '...',
-            paramCount,
-            paramIndex
+            stmtParamMatches: stmtParamMatches,
+            uniqueStmtParams: uniqueStmtParams,
+            stmtParams: stmtParams,
+            normalizedStatement: normalizedStatement.substring(0, 80) + '...',
+            stmtParamCount: stmtParams.length,
+            statementIndex: i
           });
 
-          const result = await this.database.query(statement, stmtParams);
+          const result = await this.database.query(normalizedStatement, stmtParams);
           results.push(result);
           
-          paramIndex += paramCount;
+          log.info(`✅ Statement ${i + 1} completed`, {
+            userId, chatId,
+            rowsAffected: Array.isArray(result) ? result.length : result?.rowCount || 0
+          });
         }
 
         log.info('✅ ALL SQL STATEMENTS EXECUTED', { 
@@ -639,6 +699,61 @@ Hãy trả lời trực tiếp, không cần JSON format, chỉ text response ch
     } catch (error: any) {
       log.error('Error getting chat members', error, { chatId });
       return [];
+    }
+  }
+
+  /**
+   * 🧠 Load user information from user_memory table via chat_members lookup
+   */
+  private async loadUserInfoFromMemory(userId: string): Promise<{
+    userMemory: UserMemory | null;
+    chatMemberInfo: ChatMember | null;
+    hasMemory: boolean;
+  }> {
+    try {
+      // First load user memory if exists
+      const userMemoryResult = await this.database.query(
+        'SELECT * FROM user_memory WHERE user_id = $1',
+        [userId]
+      );
+      
+      const userMemory = Array.isArray(userMemoryResult) && userMemoryResult.length > 0 
+        ? userMemoryResult[0] as UserMemory 
+        : null;
+
+      // Get basic chat member info (will be from most recent chat they're active in)
+      const chatMemberResult = await this.database.query(
+        'SELECT * FROM chat_members WHERE user_id = $1 AND is_active = true ORDER BY last_seen DESC LIMIT 1',
+        [userId]
+      );
+
+      const chatMemberInfo = Array.isArray(chatMemberResult) && chatMemberResult.length > 0
+        ? chatMemberResult[0] as ChatMember
+        : null;
+
+      const hasMemory = userMemory !== null;
+
+      log.debug('User info loaded from memory', {
+        userId,
+        hasMemory,
+        hasBasicInfo: chatMemberInfo !== null,
+        realName: userMemory?.realName,
+        preferredName: userMemory?.preferredName,
+        chatMemberName: chatMemberInfo?.username || chatMemberInfo?.firstName
+      });
+
+      return {
+        userMemory,
+        chatMemberInfo, 
+        hasMemory
+      };
+    } catch (error: any) {
+      log.error('Error loading user info from memory', error, { userId });
+      return {
+        userMemory: null,
+        chatMemberInfo: null,
+        hasMemory: false
+      };
     }
   }
 
