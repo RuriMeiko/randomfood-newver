@@ -48,6 +48,11 @@ export default {
         console.log('Chat:', message.chat.type, `(ID: ${message.chat.id})`);
         console.log('Text:', message.text);
 
+        // Kiểm tra xem có nên phản hồi không (chỉ áp dụng cho group)
+        if (!shouldRespondInGroup(body)) {
+          console.log('🚫 Skipping message - not a reply to bot or missing keywords');
+          return new Response('OK', { status: 200 });
+        }
         // Xử lý message bằng AI bot và lấy messages array
         const aiResponse = await aiBot.processMessageWithMessages(message);
 
@@ -139,6 +144,56 @@ export default {
     });
   },
 };
+
+// Kiểm tra xem bot có nên phản hồi trong group không
+function shouldRespondInGroup(body: any): boolean {
+  const message = body.message;
+  
+  // Nếu là private chat, luôn phản hồi
+  if (message.chat.type === 'private') {
+    console.log('✅ Private chat - responding');
+    return true;
+  }
+
+  // Nếu là group/supergroup, kiểm tra điều kiện
+  if (message.chat.type === 'group' || message.chat.type === 'supergroup') {
+    
+    // 1. Kiểm tra xem có phải reply tin nhắn của bot không
+    if (message.reply_to_message) {
+      const repliedTo = message.reply_to_message;
+      const isReplyToBot = repliedTo.from?.is_bot === true || 
+                          repliedTo.from?.username?.toLowerCase().includes('bot');
+      
+      if (isReplyToBot) {
+        console.log('✅ Reply to bot message - responding');
+        return true;
+      }
+    }
+
+    // 2. Kiểm tra các từ khóa trigger
+    const text = message.text.toLowerCase();
+    const keywords = ['ghi nợ', 'bot', 'mây'];
+    
+    for (const keyword of keywords) {
+      if (text.includes(keyword)) {
+        console.log(`✅ Keyword "${keyword}" found - responding`);
+        return true;
+      }
+    }
+
+    // 3. Kiểm tra mention bot (nếu có @username)
+    if (text.includes('@') && text.includes('bot')) {
+      console.log('✅ Bot mention found - responding');
+      return true;
+    }
+
+    console.log('🚫 No trigger conditions met in group');
+    return false;
+  }
+
+  // Mặc định không phản hồi cho các loại chat khác
+  return false;
+}
 
 async function sendTelegramMessage(botToken: string, chatId: number, text: string) {
   try {
