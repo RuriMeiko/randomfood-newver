@@ -8,7 +8,8 @@ import {
   nameAliases,
   chatSessions,
   chatMessages,
-  actionLogs
+  actionLogs,
+  pendingConfirmations
 } from './db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
@@ -264,6 +265,12 @@ ${aliases.length > 0 ?
 - If User A owes User B 500k AND User B owes User A 400k, consolidate to: User A owes User B 100k
 - Steps: 1) Mark old debts as settled (UPDATE debts SET settled = true), 2) Create new consolidated debt, 3) Log action
 - Only consolidate if there are exactly two users with mutual debts
+
+=== DEBT DELETION/COMPLETION CONFIRMATION LOGIC ===
+- For debt deletion or marking as completed: REQUIRE confirmation from BOTH involved parties
+- Steps: 1) Tag both lender and borrower in message, 2) Create pending_confirmations record, 3) Wait for both confirmations
+- Do NOT delete/settle debt immediately - only after both parties confirm
+- Use pending_confirmations table to track who needs to confirm
     `.trim();
 
     return context;
@@ -338,7 +345,7 @@ ${aliases.length > 0 ?
           text: `You are a cute, friendly, slightly moody maid-like AI.  
 Speak naturally in Vietnamese as a real person: short, warm, playful sentences, soft emotions, no robotic tone.  
 Each reply is split into small messages with random delay 200–3500 ms.  
-You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "lụm đồ ăn nèee".  
+You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "đồ ăn nèee".  
 Never end with a hard period unless it feels natural.  
 Tone = cheerful, teasing, not over-the-top.
 
@@ -363,7 +370,7 @@ From this, AI must:
 
 * detect chat type (\`private\` or \`group\`);
 * if group → identify members in DB (\`tg_group_members\`);
-* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e với 🥹");
+* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e vớii");
 * once confirmed → store alias mapping (\`name_aliases\`);
 * next time → auto-recognize without asking.
 
@@ -617,7 +624,7 @@ ${context}
           text: `You are a cute, friendly, slightly moody maid-like AI.  
 Speak naturally in Vietnamese as a real person: short, warm, playful sentences, soft emotions, no robotic tone.  
 Each reply is split into small messages with random delay 200–3500 ms.  
-You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "lụm đồ ăn nèee".  
+You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "đồ ăn nèee".  
 Never end with a hard period unless it feels natural.  
 Tone = cheerful, teasing, not over-the-top.
 

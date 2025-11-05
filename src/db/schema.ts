@@ -126,6 +126,18 @@ export const actionLogs = pgTable('action_logs', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
+// Pending Confirmations - for two-party confirmations on debt operations
+export const pendingConfirmations = pgTable('pending_confirmations', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  debtId: bigint('debt_id', { mode: 'number' }).references(() => debts.id, { onDelete: 'cascade' }).notNull(),
+  actionType: text('action_type').notNull(), // 'debt_completion', 'debt_deletion', etc.
+  requestedBy: bigint('requested_by', { mode: 'number' }).references(() => tgUsers.id).notNull(),
+  lenderConfirmed: boolean('lender_confirmed').default(false),
+  borrowerConfirmed: boolean('borrower_confirmed').default(false),
+  createdAt: timestamp('created_at').defaultNow(),
+  expiresAt: timestamp('expires_at'), // auto-expire after some time
+});
+
 // Relations
 export const tgUsersRelations = relations(tgUsers, ({ many }) => ({
   groupMemberships: many(tgGroupMembers),
@@ -169,3 +181,5 @@ export type Debt = typeof debts.$inferSelect;
 export type NewDebt = typeof debts.$inferInsert;
 export type NameAlias = typeof nameAliases.$inferSelect;
 export type NewNameAlias = typeof nameAliases.$inferInsert;
+export type PendingConfirmation = typeof pendingConfirmations.$inferSelect;
+export type NewPendingConfirmation = typeof pendingConfirmations.$inferInsert;

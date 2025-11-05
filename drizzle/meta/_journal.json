@@ -15,6 +15,13 @@
       "when": 1761752169044,
       "tag": "0001_opposite_piledriver",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1762323980954,
+      "tag": "0002_sour_wild_child",
+      "breakpoints": true
     }
   ]
 }
