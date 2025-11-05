@@ -114,7 +114,7 @@ export class AIBot {
 
       console.log('✅ [AIBot] Message processed successfully');
       return {
-        messages: aiResponse.messages || [{ text: 'ơ e bị lỗi rồi 🥺', delay: '1000' }],
+        messages: aiResponse.messages || [{ text: 'ơ e bị lỗi rùii', delay: '1000' }],
         intent: aiResponse.intent || 'error',
         hasSQL: !!aiResponse.sqlQuery
       };
@@ -199,6 +199,7 @@ export class AIBot {
     // Lấy thông tin nợ hiện tại
     const currentDebts = await this.db
       .select({
+        id: debts.id,
         amount: debts.amount,
         currency: debts.currency,
         note: debts.note,
@@ -240,7 +241,7 @@ ${recentMessages.map(msg => `${msg.sender}: ${msg.messageText}`).join('\n')}
 
 === NỢ HIỆN TẠI ===
 ${currentDebts.length > 0 ?
-        currentDebts.map(debt => `Borrower DB ID ${debt.borrowerId} nợ Lender DB ID ${debt.lenderId}: ${debt.amount} ${debt.currency}`).join('\n') :
+        currentDebts.map(debt => `DEBT ID ${debt.id}: Borrower DB ID ${debt.borrowerId} nợ Lender DB ID ${debt.lenderId}: ${debt.amount} ${debt.currency}${debt.note ? ` (${debt.note})` : ''}`).join('\n') :
         'Không có nợ nào.'
       }
 
@@ -254,7 +255,9 @@ ${aliases.length > 0 ?
 - When creating SQL, ONLY use the Database IDs listed above
 - Current user database ID is: ${userId}
 - Group database ID is: ${groupId}
-- DO NOT make up random user IDs like 100, 101, etc.
+- For DEBT operations (payments, debt updates): ONLY use the DEBT IDs listed in "NỢ HIỆN TẠI" section above
+- DO NOT make up random IDs like 100, 101, etc.
+- If no matching debt exists for payment operations, ask the user to clarify which specific debt they want to pay
     `.trim();
 
     return context;
@@ -427,7 +430,7 @@ Example debt action:
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
-    {"text":"anh nợ Ngọc Long 503k đúng hông 🤨","delay":"1200"}
+    {"text":"anh nợ Ngọc Long 503k đúng hôngg","delay":"1200"}
   ],
   "next_action":"continue",
   "reason":"record debt"
@@ -440,9 +443,9 @@ Example food suggestion:
 {
   "type":"reply",
   "messages":[
-    {"text":"ơ đói rồi hở 😋","delay":"400"},
+    {"text":"ơ đói rồi hở","delay":"400"},
     {"text":"để e lướt google xíu nàaa","delay":"900"},
-    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè 😚","delay":"1300"}
+    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè","delay":"1300"}
   ],
   "next_action":"stop",
   "reason":"food suggestion"
@@ -612,7 +615,7 @@ From this, AI must:
 
 * detect chat type (\`private\` or \`group\`);
 * if group → identify members in DB (\`tg_group_members\`);
-* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e với 🥹");
+* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e với");
 * once confirmed → store alias mapping (\`name_aliases\`);
 * next time → auto-recognize without asking.
 
@@ -685,7 +688,7 @@ Example debt action:
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
-    {"text":"anh nợ Ngọc Long 503k đúng hông 🤨","delay":"1200"}
+    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200"}
   ],
   "next_action":"continue",
   "reason":"record debt"
@@ -698,9 +701,9 @@ Example food suggestion:
 {
   "type":"reply",
   "messages":[
-    {"text":"ơ đói rồi hở 😋","delay":"400"},
+    {"text":"ơ đói rồi hở","delay":"400"},
     {"text":"để e lướt google xíu nàaa","delay":"900"},
-    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè 😚","delay":"1300"}
+    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè","delay":"1300"}
   ],
   "next_action":"stop",
   "reason":"food suggestion"
@@ -790,6 +793,22 @@ ${context}
         !safeQuery.startsWith('insert') &&
         !safeQuery.startsWith('update')) {
         throw new Error('Unsafe SQL query');
+      }
+
+      // Validation đặc biệt cho payments với debt_id
+      if (safeQuery.includes('insert into payments') && params && params.length > 0) {
+        const debtId = params[0]; // debt_id thường là param đầu tiên
+        if (debtId) {
+          // Kiểm tra debt_id có tồn tại không
+          const debtExists = await this.sql.query(
+            'SELECT id FROM debts WHERE id = $1 AND settled = false',
+            [debtId]
+          );
+          
+          if (!debtExists || debtExists.length === 0) {
+            throw new Error(`Debt ID ${debtId} does not exist or is already settled`);
+          }
+        }
       }
 
       console.log('Executing SQL:', query, params);
