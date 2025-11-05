@@ -89,16 +89,16 @@ export class AIBot {
   }> {
     try {
       console.log('🤖 [AIBot] Processing message with messages:', message.text);
-      
+
       // 1. Đảm bảo user và group tồn tại trong database
       console.log('📝 [AIBot] Step 1: Ensuring user and group exist...');
       await this.ensureUserAndGroup(message);
-      
+
       // 2. Tạo context cho AI từ database
       console.log('🧠 [AIBot] Step 2: Building context from database...');
       const context = await this.buildContext(message);
       console.log('📄 [AIBot] Context built, length:', context.length);
-      
+
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
       const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context);
@@ -107,18 +107,18 @@ export class AIBot {
         hasSQL: !!aiResponse.sqlQuery,
         messagesCount: aiResponse.messages?.length || 0
       });
-      
+
       // 4. Lưu conversation
       console.log('💾 [AIBot] Step 4: Saving conversation...');
       await this.saveConversation(message, aiResponse);
-      
+
       console.log('✅ [AIBot] Message processed successfully');
       return {
         messages: aiResponse.messages || [{ text: 'ơ e bị lỗi rồi 🥺', delay: '1000' }],
         intent: aiResponse.intent || 'error',
         hasSQL: !!aiResponse.sqlQuery
       };
-      
+
     } catch (error) {
       console.error('❌ [AIBot] Error processing message:', error);
       return {
@@ -472,7 +472,7 @@ ${context}
 `;
 
     try {
-      const result = await this.genAI.models.generateContent({
+      const result: any = await this.genAI.models.generateContent({
         model: 'gemini-flash-latest',
         config,
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
@@ -480,7 +480,7 @@ ${context}
 
       // Get response text from Gemini API
       const responseText = result.candidates[0].content.parts[0].text;
-      
+
       console.log('🤖 [AI] Raw response:', responseText);
 
       // Parse JSON response
@@ -504,9 +504,9 @@ ${context}
     } catch (error) {
       console.error('❌ [AI] Error in AI analysis:', error);
       console.error('❌ [AI] Error details:', error.message);
-      
+
       // Không dùng fallback nữa, luôn cần AI trả về JSON chuẩn
-      
+
       // Nếu là JSON parse error hoặc lỗi khác, thử return response đơn giản
       console.log('⚠️ [AI] Returning simple response due to parsing error');
       return {
@@ -738,7 +738,7 @@ ${context}
 
       // Get response text from Gemini API
       const responseText = result.candidates[0].content.parts[0].text;
-      
+
       console.log('🤖 [AI] Raw response:', responseText);
 
       // Parse JSON response
@@ -768,9 +768,9 @@ ${context}
     } catch (error) {
       console.error('❌ [AI] Error in AI analysis:', error);
       console.error('❌ [AI] Error details:', error.message);
-      
+
       // Không dùng fallback nữa, luôn cần AI trả về JSON chuẩn
-      
+
       // Nếu là JSON parse error hoặc lỗi khác, thử return response đơn giản
       console.log('⚠️ [AI] Returning simple response due to parsing error');
       return {
@@ -793,11 +793,11 @@ ${context}
       }
 
       console.log('Executing SQL:', query, params);
-      
+
       // Execute raw SQL với Neon client sử dụng .query() method
       const result = await this.sql.query(query, params);
       console.log('✅ SQL executed successfully:', result);
-      
+
       return result;
 
     } catch (error) {
@@ -935,7 +935,7 @@ ${context}
       } else if (aiResponse.response) {
         responseText = aiResponse.response;
       }
-        
+
       await this.db.insert(chatMessages).values({
         sessionId: session[0].id,
         sender: 'ai',
