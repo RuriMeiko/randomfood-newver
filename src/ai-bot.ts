@@ -258,6 +258,12 @@ ${aliases.length > 0 ?
 - For DEBT operations (payments, debt updates): ONLY use the DEBT IDs listed in "NỢ HIỆN TẠI" section above
 - DO NOT make up random IDs like 100, 101, etc.
 - If no matching debt exists for payment operations, ask the user to clarify which specific debt they want to pay
+
+=== AUTO DEBT CONSOLIDATION LOGIC ===
+- When adding new debt, check if mutual debts exist between the same two users
+- If User A owes User B 500k AND User B owes User A 400k, consolidate to: User A owes User B 100k
+- Steps: 1) Mark old debts as settled (UPDATE debts SET settled = true), 2) Create new consolidated debt, 3) Log action
+- Only consolidate if there are exactly two users with mutual debts
     `.trim();
 
     return context;
@@ -426,7 +432,8 @@ Example debt action:
 {
   "type":"sql",
   "sql":[
-    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]}
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_created","{\"amount\":503000,\"lender_id\":10,\"borrower_id\":11}"]}
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
@@ -434,6 +441,26 @@ Example debt action:
   ],
   "next_action":"continue",
   "reason":"record debt"
+}
+\`\`\`
+
+Example debt consolidation (when mutual debts exist):
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"UPDATE debts SET settled = true WHERE id IN ($1,$2)","params":["5","8"]},
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,100000,"Consolidated debt: 500k - 400k = 100k"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_consolidated","{\"old_debts\":[5,8],\"net_amount\":100000,\"lender_id\":10,\"borrower_id\":11}"]}
+  ],
+  "messages":[
+    {"text":"ơ để e tính lại nợ nà","delay":"600"},
+    {"text":"anh nợ Long 500k, Long nợ anh 400k","delay":"1000"},
+    {"text":"vậy anh chỉ nợ Long 100k thui nhaaa 🥰","delay":"1200"}
+  ],
+  "next_action":"continue",
+  "reason":"consolidate mutual debts"
 }
 \`\`\`
 
@@ -684,7 +711,8 @@ Example debt action:
 {
   "type":"sql",
   "sql":[
-    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]}
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_created","{\"amount\":503000,\"lender_id\":10,\"borrower_id\":11}"]}
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
@@ -692,6 +720,26 @@ Example debt action:
   ],
   "next_action":"continue",
   "reason":"record debt"
+}
+\`\`\`
+
+Example debt consolidation (when mutual debts exist):
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"UPDATE debts SET settled = true WHERE id IN ($1,$2)","params":["5","8"]},
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,100000,"Consolidated debt: 500k - 400k = 100k"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_consolidated","{\"old_debts\":[5,8],\"net_amount\":100000,\"lender_id\":10,\"borrower_id\":11}"]}
+  ],
+  "messages":[
+    {"text":"ơ để e tính lại nợ nà","delay":"600"},
+    {"text":"anh nợ Long 500k, Long nợ anh 400k","delay":"1000"},
+    {"text":"vậy anh chỉ nợ Long 100k thui nhaaa 🥰","delay":"1200"}
+  ],
+  "next_action":"continue",
+  "reason":"consolidate mutual debts"
 }
 \`\`\`
 
