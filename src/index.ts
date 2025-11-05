@@ -53,6 +53,14 @@ export default {
           console.log('🚫 Skipping message - not a reply to bot or missing keywords');
           return new Response('OK', { status: 200 });
         }
+        const api = telegramBot.getApi();
+
+        try {
+          await api.sendChatAction(message.chat.id, 'typing');
+          console.log('✅ Typing action sent');
+        } catch (typingError) {
+          console.error('❌ Typing action error:', typingError);
+        }
         // Xử lý message bằng AI bot và lấy messages array
         const aiResponse = await aiBot.processMessageWithMessages(message);
 
@@ -148,7 +156,7 @@ export default {
 // Kiểm tra xem bot có nên phản hồi trong group không
 function shouldRespondInGroup(body: any): boolean {
   const message = body.message;
-  
+
   // Nếu là private chat, luôn phản hồi
   if (message.chat.type === 'private') {
     console.log('✅ Private chat - responding');
@@ -157,13 +165,13 @@ function shouldRespondInGroup(body: any): boolean {
 
   // Nếu là group/supergroup, kiểm tra điều kiện
   if (message.chat.type === 'group' || message.chat.type === 'supergroup') {
-    
+
     // 1. Kiểm tra xem có phải reply tin nhắn của bot không
     if (message.reply_to_message) {
       const repliedTo = message.reply_to_message;
-      const isReplyToBot = repliedTo.from?.is_bot === true || 
-                          repliedTo.from?.username?.toLowerCase().includes('bot');
-      
+      const isReplyToBot = repliedTo.from?.is_bot === true ||
+        repliedTo.from?.username?.toLowerCase().includes('bot');
+
       if (isReplyToBot) {
         console.log('✅ Reply to bot message - responding');
         return true;
@@ -173,7 +181,7 @@ function shouldRespondInGroup(body: any): boolean {
     // 2. Kiểm tra các từ khóa trigger
     const text = message.text.toLowerCase();
     const keywords = ['ghi nợ', 'bot', 'mây'];
-    
+
     for (const keyword of keywords) {
       if (text.includes(keyword)) {
         console.log(`✅ Keyword "${keyword}" found - responding`);
@@ -195,25 +203,10 @@ function shouldRespondInGroup(body: any): boolean {
   return false;
 }
 
-async function sendTelegramMessage(botToken: string, chatId: number, text: string) {
-  try {
-    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'Markdown'
-      })
-    });
-  } catch (error) {
-    console.error('Error sending Telegram message:', error);
-  }
-}
 
 async function sendTelegramMessagesWithDelay(bot: ModernTelegramBot, chatId: number, messages: { text: string; delay: string }[]) {
   const api = bot.getApi();
-  
+
   for (const message of messages) {
     try {
       // Show typing indicator
