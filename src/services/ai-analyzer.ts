@@ -39,11 +39,10 @@ export class AIAnalyzerService {
         // Handle continue action
         if (parsed.next_action === "continue") {
           const continueResponse = await this.handleContinueAction(parsed, context, message, userMessage);
-          const currentResponse = this.extractResponseText(parsed);
           
           return {
-            response: currentResponse + ' ' + (continueResponse.response || ''),
-            intent: parsed.type,
+            response: continueResponse.response || 'Xong rồi nha!',
+            intent: continueResponse.intent || parsed.type,
             sqlQuery: parsed.sql[0].query,
             sqlParams: parsed.sql[0].params,
           };
@@ -90,7 +89,9 @@ export class AIAnalyzerService {
         // Handle continue action
         if (parsed.next_action === "continue") {
           const continueResponse = await this.handleContinueActionWithMessages(parsed, context, message, userMessage);
-          parsed.messages = [...(parsed.messages || []), ...(continueResponse.messages || [])];
+          // Replace messages with continue response, don't combine
+          parsed.messages = continueResponse.messages || [];
+          parsed.intent = continueResponse.intent || parsed.type;
         }
       }
 
@@ -120,7 +121,7 @@ export class AIAnalyzerService {
         properties: {
           type: {
             type: Type.STRING,
-            enum: ["reply", "sql", "stop"],
+            enum: ["reply", "sql"],
           },
           messages: {
             type: Type.ARRAY,
@@ -343,7 +344,7 @@ food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
 
 \`\`\`json
 {
-  "type": "reply|sql|stop",
+  "type": "reply|sql",
   "messages": [{ "text": "...", "delay": "..." }],
   "sql": [{ "query": "...", "params": [...] }],
   "next_action": "continue|stop",
@@ -351,7 +352,7 @@ food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
 }
 \`\`\`
 
-Example debt action:
+Example debt creation (INSERT - no continue needed):
 
 \`\`\`json
 {
@@ -362,10 +363,27 @@ Example debt action:
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
-    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200"}
+    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200"},
+    {"text":"xong rồi nhaaa 📝","delay":"1000"}
+  ],
+  "next_action":"stop",
+  "reason":"record debt"
+}
+\`\`\`
+
+Example debt query (SELECT - continue needed):
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"SELECT d.id, d.amount, d.currency, d.note, lender.display_name as lender_name, borrower.display_name as borrower_name FROM debts d JOIN tg_users lender ON d.lender_id = lender.id JOIN tg_users borrower ON d.borrower_id = borrower.id WHERE d.settled = false AND d.group_id = $1","params":["123"]}
+  ],
+  "messages":[
+    {"text":"để e xem sổ nợ nàaa","delay":"600"}
   ],
   "next_action":"continue",
-  "reason":"record debt"
+  "reason":"need to see debt results to format response"
 }
 \`\`\`
 
@@ -405,6 +423,20 @@ Example food suggestion:
 \`\`\`
 
 ---
+
+**CONTINUE ACTION RULES**
+
+* Use "next_action": "continue" ONLY when you need to see SQL results to generate proper response
+* For INSERT/UPDATE/DELETE operations: Usually use "stop" - you know what was inserted/updated
+* For SELECT operations: Use "continue" - you need to see the query results to respond
+* AI decides when to continue based on whether SQL results are needed for the response
+
+**CONFIRMATION RULES**
+
+* For confirmation requests, use format: "tên @username xác nhận mây" (must include "mây" to trigger bot)
+* Example: "@HThinh90 xác nhận mây", "@Dragonccm xác nhận mây"  
+* Do NOT use "đồng ý xoá" or other phrases - only "xác nhận mây"
+* Keep confirmation messages short and clear
 
 **Rule summary**
 
