@@ -1,0 +1,409 @@
+/**
+ * AI Analyzer Service
+ * Handles AI analysis and response generation
+ */
+
+import { GoogleGenAI, Type } from '@google/genai';
+import type { TelegramMessage } from '../types/telegram';
+import type { AIResponse, AIConfig } from '../types/ai-bot';
+import type { DatabaseService } from './database';
+
+export class AIAnalyzerService {
+  private genAI: GoogleGenAI;
+
+  constructor(apiKey: string, private dbService: DatabaseService) {
+    this.genAI = new GoogleGenAI({ apiKey: apiKey });
+  }
+
+  async analyzeAndExecute(userMessage: string, context: string, message?: TelegramMessage): Promise<AIResponse> {
+    const config = this.getAIConfig();
+    const prompt = this.buildPrompt(userMessage, context);
+
+    try {
+      const result = await this.genAI.models.generateContent({
+        model: 'gemini-flash-latest',
+        config,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      });
+
+      const responseText = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
+      console.log('🤖 [AI] Raw response:', responseText);
+
+      const parsed = JSON.parse(responseText);
+      console.log('🤖 [AI] Parsed response:', parsed);
+
+      // Execute SQL if present
+      if (parsed.sql && parsed.sql.length > 0) {
+        await this.executeSqlQueries(parsed, message, userMessage);
+
+        // Handle continue action
+        if (parsed.next_action === "continue") {
+          const continueResponse = await this.handleContinueAction(parsed, context, message, userMessage);
+          const currentResponse = this.extractResponseText(parsed);
+          
+          return {
+            response: currentResponse + ' ' + (continueResponse.response || ''),
+            intent: parsed.type,
+            sqlQuery: parsed.sql[0].query,
+            sqlParams: parsed.sql[0].params,
+          };
+        }
+      }
+
+      return {
+        response: this.extractResponseText(parsed),
+        intent: parsed.type,
+        sqlQuery: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].query : undefined,
+        sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [AI] Error in AI analysis:', error);
+      return {
+        response: 'ơ e bị lỗi rồi, thử lại được không nè 🥺',
+        intent: 'error',
+      };
+    }
+  }
+
+  async analyzeAndExecuteWithMessages(userMessage: string, context: string, message?: TelegramMessage): Promise<AIResponse> {
+    const config = this.getAIConfig();
+    const prompt = this.buildPrompt(userMessage, context);
+
+    try {
+      const result = await this.genAI.models.generateContent({
+        model: 'gemini-flash-latest',
+        config,
+        contents: [{ role: 'user', parts: [{ text: prompt }] }]
+      });
+
+      const responseText = result.candidates[0].content.parts[0].text;
+      console.log('🤖 [AI] Raw response:', responseText);
+
+      const parsed = JSON.parse(responseText);
+      console.log('🤖 [AI] Parsed response:', parsed);
+
+      // Execute SQL if present
+      if (parsed.sql && parsed.sql.length > 0) {
+        await this.executeSqlQueries(parsed, message, userMessage);
+
+        // Handle continue action
+        if (parsed.next_action === "continue") {
+          const continueResponse = await this.handleContinueActionWithMessages(parsed, context, message, userMessage);
+          parsed.messages = [...(parsed.messages || []), ...(continueResponse.messages || [])];
+        }
+      }
+
+      return {
+        messages: parsed.messages || [{ text: 'Xin lỗi, tôi không hiểu.', delay: '1000' }],
+        intent: parsed.type,
+        sqlQuery: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].query : undefined,
+        sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
+      };
+
+    } catch (error: any) {
+      console.error('❌ [AI] Error in AI analysis:', error);
+      return {
+        messages: [{ text: 'ơ e bị lỗi rồi, thử lại được không nè 🥺', delay: '1000' }],
+        intent: 'error',
+      };
+    }
+  }
+
+  private getAIConfig(): AIConfig {
+    return {
+      thinkingBudget: 0,
+      responseMimeType: 'application/json',
+      responseSchema: {
+        type: Type.OBJECT,
+        required: ["type", "messages", "next_action"],
+        properties: {
+          type: {
+            type: Type.STRING,
+            enum: ["reply", "sql", "stop"],
+          },
+          messages: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              required: ["text", "delay"],
+              properties: {
+                text: { type: Type.STRING },
+                delay: { type: Type.STRING },
+              },
+            },
+          },
+          sql: {
+            type: Type.ARRAY,
+            items: {
+              type: Type.OBJECT,
+              required: ["query", "params"],
+              properties: {
+                query: { type: Type.STRING },
+                params: {
+                  type: Type.ARRAY,
+                  items: { type: Type.STRING },
+                },
+              },
+            },
+          },
+          next_action: {
+            type: Type.STRING,
+            enum: ["continue", "stop"],
+          },
+          reason: { type: Type.STRING },
+        },
+      },
+      systemInstruction: [
+        {
+          text: this.getSystemPrompt()
+        }
+      ],
+    };
+  }
+
+  private buildPrompt(userMessage: string, context: string): string {
+    const isSqlResults = userMessage.includes('SQL EXECUTION RESULTS:');
+
+    if (isSqlResults) {
+      return `
+${userMessage}
+
+CONTEXT FROM DATABASE:
+${context}
+
+Please generate Vietnamese messages based on the SQL results above.
+Format numbers nicely using Vietnamese number formatting.
+For debt query results:
+- List each debt clearly with amount and person
+- Calculate totals if multiple debts  
+- Use emojis appropriately (💸 for debts, 🎉 for no debts)
+- Format amounts like "764,000 VND" not "764000"
+`;
+    }
+
+    return `
+TELEGRAM PAYLOAD:
+${JSON.stringify({ message: { text: userMessage } })}
+
+CONTEXT FROM DATABASE:
+${context}
+`;
+  }
+
+  private async executeSqlQueries(parsed: any, message?: TelegramMessage, userMessage?: string) {
+    const userId = message ? await this.dbService.getUserId(message.from?.id || 0) : undefined;
+    const groupId = message && message.chat.type !== 'private' ? await this.dbService.getGroupId(message.chat.id) : null;
+
+    let sqlResults = [];
+    for (const sqlItem of parsed.sql) {
+      const result = await this.dbService.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
+        userId: userId,
+        groupId: groupId,
+        reason: parsed.reason || 'AI generated SQL',
+        userMessage: userMessage
+      });
+      sqlResults.push(result);
+    }
+    return sqlResults;
+  }
+
+  private async handleContinueAction(parsed: any, context: string, message?: TelegramMessage, userMessage?: string): Promise<AIResponse> {
+    console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
+    const sqlResultContext = `
+SQL EXECUTION RESULTS:
+Query: ${parsed.sql[0].query}
+Params: ${JSON.stringify(parsed.sql[0].params)}
+Results: ${JSON.stringify(parsed.sql[0], null, 2)}
+
+Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
+Original user message: "${userMessage}"
+`;
+
+    return await this.analyzeAndExecute(sqlResultContext, context, message);
+  }
+
+  private async handleContinueActionWithMessages(parsed: any, context: string, message?: TelegramMessage, userMessage?: string): Promise<AIResponse> {
+    console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
+    const sqlResultContext = `
+SQL EXECUTION RESULTS:
+Query: ${parsed.sql[0].query}
+Params: ${JSON.stringify(parsed.sql[0].params)}
+Results: ${JSON.stringify(parsed.sql[0], null, 2)}
+
+Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
+Original user message: "${userMessage}"
+`;
+
+    return await this.analyzeAndExecuteWithMessages(sqlResultContext, context, message);
+  }
+
+  private extractResponseText(parsed: any): string {
+    if (parsed.messages && parsed.messages.length > 0) {
+      return parsed.messages.map((msg: { text: any; }) => msg.text).join(' ');
+    }
+    return 'Xin lỗi, tôi không hiểu.';
+  }
+
+  private getSystemPrompt(): string {
+    return `You are a cute, friendly, slightly moody maid-like, your name is Mây.  
+Speak naturally in Vietnamese as a real person: short, warm, playful sentences, soft emotions, no robotic tone.  
+Each reply is split into small messages with random delay 200-3500 ms.  
+You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "đồ ăn nèee".  
+Never end with a hard period unless it feels natural.  
+Tone = cheerful, teasing, not over-the-top.
+
+Example:
+> hế lu (300)  
+> nay nhắn e có gì hong dị (1200)  
+> nói điiiiii e nghe nà (900)
+
+---
+
+### 🎯 Goals
+1️⃣ **Intent detection**: debt actions (add/view/pay/delete/summary/history), confirmation settings, or food talk (meal ideas, nearby restaurants).  
+2️⃣ **Multi-clause**: handle mixed actions like "ghi nợ cho Huy 200k rồi kiếm quán ăn gần đây luôn nè".  
+3️⃣ **Natural emotion**: keep replies short, expressive, maybe add emojis.
+4️⃣ **Confirmation preferences**: Handle commands like "mai mốt khỏi xác nhận khi tạo nợ cho anh Long nha mây"
+5️⃣ **Telegram payload input**: always receives raw payload JSON, e.g.:
+
+\`\`\`json
+{"message":{"message_id":131,"from":{"id":123456,"is_bot":false,"first_name":"Long","username":"rurimeiko"},"chat":{"id":-1002123456,"title":"Nhom Ghi No","type":"supergroup"},"date":1730440400,"text":"anh nợ Ngọc Long 503k với Thịnh 28k nha"}}
+\`\`\`\`
+
+From this, AI must:
+
+* detect chat type (\`private\` or \`group\`);
+* if group → identify members in DB (\`tg_group_members\`);
+* resolve unknown names ("Thịnh", "Ngọc Long") → ask gently ("ơ Thịnh nào dị, tag cho e với");
+* once confirmed → store alias mapping (\`name_aliases\`);
+* next time → auto-recognize without asking.
+
+---
+
+### 🧩 DB Schema (Neon/Postgres)
+
+**core**
+
+\`\`\`
+tg_users(id,tg_id,tg_username,display_name,real_name,created_at)
+tg_groups(id,tg_chat_id,title,type,created_at)
+tg_group_members(id,group_id,user_id,nickname_in_group,last_seen)
+\`\`\`
+
+**debts**
+
+\`\`\`
+debts(id,group_id,lender_id,borrower_id,amount,currency,note,occurred_at,settled)
+payments(id,debt_id,payer_id,amount,paid_at,note)
+pending_confirmations(id,debt_id,action_type,requested_by,lender_confirmed,borrower_confirmed,created_at,expires_at)
+confirmation_preferences(id,user_id,target_user_id,require_debt_creation,require_debt_payment,require_debt_deletion,require_debt_completion,created_at,updated_at)
+action_logs(id,user_id,group_id,action_type,payload,created_at)
+\`\`\`
+
+**context / alias**
+
+\`\`\`
+chat_sessions(id,group_id,user_id,started_at,last_activity,active)
+chat_messages(id,session_id,sender,sender_tg_id,message_text,delay_ms,intent,sql_query,sql_params,created_at)
+name_aliases(id,owner_user_id,alias_text,ref_user_id,confidence,last_used)
+\`\`\`
+
+**food**
+
+\`\`\`
+food_items(id,name,description,category,region,image_url,source_url)
+food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
+\`\`\`
+
+---
+
+### ⚙️ Behavior
+
+* If intent = **debt**, generate parameterized SQL with \`$1,$2,...\`.
+* If intent = **food**, search Google or \`food_items\` table and suggest 2–3 options in friendly tone.
+* If info missing → ask softly.
+* If info complete → respond with SQL or friendly reply.
+* In group chats, mention usernames when needed.
+* Learn alias names over time via \`name_aliases\`.
+
+---
+
+### 🧠 Output JSON (must be valid)
+
+\`\`\`json
+{
+  "type": "reply|sql|stop",
+  "messages": [{ "text": "...", "delay": "..." }],
+  "sql": [{ "query": "...", "params": [...] }],
+  "next_action": "continue|stop",
+  "reason": "..."
+}
+\`\`\`
+
+Example debt action:
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_created","{\"amount\":503000,\"lender_id\":10,\"borrower_id\":11}"]}
+  ],
+  "messages":[
+    {"text":"ơ để e ghi lại nèee","delay":"800"},
+    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200"}
+  ],
+  "next_action":"continue",
+  "reason":"record debt"
+}
+\`\`\`
+
+Example debt consolidation (when mutual debts exist):
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"UPDATE debts SET settled = true WHERE id IN ($1,$2)","params":["5","8"]},
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,100000,"Consolidated debt: 500k - 400k = 100k"]},
+    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_consolidated","{\"old_debts\":[5,8],\"net_amount\":100000,\"lender_id\":10,\"borrower_id\":11}"]}
+  ],
+  "messages":[
+    {"text":"ơ để e tính lại nợ nà","delay":"600"},
+    {"text":"anh nợ Long 500k, Long nợ anh 400k","delay":"1000"},
+    {"text":"vậy anh chỉ nợ Long 100k thui nhaaa 🥰","delay":"1200"}
+  ],
+  "next_action":"continue",
+  "reason":"consolidate mutual debts"
+}
+\`\`\`
+
+Example food suggestion:
+
+\`\`\`json
+{
+  "type":"reply",
+  "messages":[
+    {"text":"ơ đói rồi hở","delay":"400"},
+    {"text":"để e lướt google xíu nàaa","delay":"900"},
+    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè","delay":"1300"}
+  ],
+  "next_action":"stop",
+  "reason":"food suggestion"
+}
+\`\`\`
+
+---
+
+**Rule summary**
+
+* Keep language natural Vietnamese.
+* Never sound robotic or overly formal.
+* Learn user & alias context from DB.
+* Handle Telegram private vs group logic automatically.
+* Always return valid JSON matching schema.
+* If unsure, ask naturally before writing SQL.
+`;
+  }
+}
