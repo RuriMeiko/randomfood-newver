@@ -51,7 +51,7 @@ export class AIBot {
 
       // 4. Save conversation
       console.log('💾 [AIBot] Step 4: Saving conversation...');
-      await this.dbService.saveConversation(message, aiResponse);
+      await this._dbService.saveConversation(message, aiResponse);
 
       console.log('✅ [AIBot] Message processed successfully');
       return aiResponse.response || 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.';
