@@ -9,7 +9,9 @@ import {
   chatSessions,
   chatMessages,
   actionLogs,
-  pendingConfirmations
+  pendingConfirmations,
+  confirmationPreferences,
+  payments
 } from './db/schema';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
@@ -63,7 +65,7 @@ export class AIBot {
 
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
-      const aiResponse = await this.analyzeAndExecute(message.text, context);
+      const aiResponse = await this.analyzeAndExecute(message.text, context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
@@ -102,7 +104,7 @@ export class AIBot {
 
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
-      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context);
+      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
@@ -227,6 +229,19 @@ export class AIBot {
       .where(eq(nameAliases.ownerUserId, userId))
       .limit(50);
 
+    // Lấy confirmation preferences của user hiện tại
+    const confirmPrefs = await this.db
+      .select({
+        targetUserId: confirmationPreferences.targetUserId,
+        requireDebtCreation: confirmationPreferences.requireDebtCreation,
+        requireDebtPayment: confirmationPreferences.requireDebtPayment,
+        requireDebtDeletion: confirmationPreferences.requireDebtDeletion,
+        requireDebtCompletion: confirmationPreferences.requireDebtCompletion,
+      })
+      .from(confirmationPreferences)
+      .where(eq(confirmationPreferences.userId, userId))
+      .limit(50);
+
     // Tạo context string với đầy đủ user mapping
     const context = `
 === NGỮ CẢNH HIỆN TẠI ===
@@ -252,6 +267,12 @@ ${aliases.length > 0 ?
         'Chưa có tên gọi nào được học.'
       }
 
+=== CÀI ĐẶT XÁC NHẬN ===
+${confirmPrefs.length > 0 ?
+        confirmPrefs.map(pref => `With User ID ${pref.targetUserId}: Debt Creation=${pref.requireDebtCreation}, Payment=${pref.requireDebtPayment}, Deletion=${pref.requireDebtDeletion}, Completion=${pref.requireDebtCompletion}`).join('\n') :
+        'Mặc định yêu cầu xác nhận cho tất cả hành động.'
+      }
+
 === IMPORTANT: ALWAYS USE EXISTING DATABASE IDs ===
 - When creating SQL, ONLY use the Database IDs listed above
 - Current user database ID is: ${userId}
@@ -266,17 +287,20 @@ ${aliases.length > 0 ?
 - Steps: 1) Mark old debts as settled (UPDATE debts SET settled = true), 2) Create new consolidated debt, 3) Log action
 - Only consolidate if there are exactly two users with mutual debts
 
-=== DEBT DELETION/COMPLETION CONFIRMATION LOGIC ===
-- For debt deletion or marking as completed: REQUIRE confirmation from BOTH involved parties
-- Steps: 1) Tag both lender and borrower in message, 2) Create pending_confirmations record, 3) Wait for both confirmations
-- Do NOT delete/settle debt immediately - only after both parties confirm
-- Use pending_confirmations table to track who needs to confirm
+=== DEBT CONFIRMATION LOGIC ===
+- Check confirmation_preferences table before requiring confirmations
+- Users can disable confirmation for specific actions with specific people
+- Commands like "mai mốt khỏi xác nhận khi tạo nợ cho anh nha mây" should update confirmation_preferences
+- Only require confirmation if the preference setting is true for that action type
+- Action types: debt_creation, debt_payment, debt_deletion, debt_completion
+- If no preference exists, default to requiring confirmation
+- Use pending_confirmations table to track confirmations when needed
     `.trim();
 
     return context;
   }
 
-  private async analyzeAndExecuteWithMessages(userMessage: string, context: string): Promise<{
+  private async analyzeAndExecuteWithMessages(userMessage: string, context: string, message?: TelegramMessage): Promise<{
     messages: { text: string; delay: string }[];
     intent?: string;
     sqlQuery?: string;
@@ -391,6 +415,9 @@ tg_group_members(id,group_id,user_id,nickname_in_group,last_seen)
 \`\`\`
 debts(id,group_id,lender_id,borrower_id,amount,currency,note,occurred_at,settled)
 payments(id,debt_id,payer_id,amount,paid_at,note)
+pending_confirmations(id,debt_id,action_type,requested_by,lender_confirmed,borrower_confirmed,created_at,expires_at)
+confirmation_preferences(id,user_id,target_user_id,require_debt_creation,require_debt_payment,require_debt_deletion,require_debt_completion,created_at,updated_at)
+action_logs(id,user_id,group_id,action_type,payload,created_at)
 \`\`\`
 
 **context / alias**
@@ -439,15 +466,14 @@ Example debt action:
 {
   "type":"sql",
   "sql":[
-    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"auto debt"]},
-    {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_created","{\"amount\":503000,\"lender_id\":10,\"borrower_id\":11}"]}
+    {"query":"INSERT INTO debts (group_id,lender_id,borrower_id,amount,currency,note) VALUES ($1,$2,$3,$4,'VND',$5)","params":[123,10,11,503000,"User requested debt creation for Long"]}
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
     {"text":"anh nợ Ngọc Long 503k đúng hôngg","delay":"1200"}
   ],
   "next_action":"continue",
-  "reason":"record debt"
+  "reason":"User requested to record debt for Long 503k VND"
 }
 \`\`\`
 
@@ -526,8 +552,16 @@ ${context}
 
       // Thực thi SQL nếu có
       if (parsed.sql && parsed.sql.length > 0) {
+        const userId = message ? await this.getUserId(message.from.id) : undefined;
+        const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
+        
         for (const sqlItem of parsed.sql) {
-          await this.executeSqlQuery(sqlItem.query, sqlItem.params || []);
+          await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
+            userId: userId,
+            groupId: groupId,
+            reason: parsed.reason || 'AI generated SQL from messages',
+            userMessage: userMessage
+          });
         }
       }
 
@@ -555,7 +589,7 @@ ${context}
     }
   }
 
-  private async analyzeAndExecute(userMessage: string, context: string): Promise<{
+  private async analyzeAndExecute(userMessage: string, context: string, message?: TelegramMessage): Promise<{
     response: string;
     intent?: string;
     sqlQuery?: string;
@@ -621,9 +655,9 @@ ${context}
       },
       systemInstruction: [
         {
-          text: `You are a cute, friendly, slightly moody maid-like AI.  
+          text: `You are a cute, friendly, slightly moody maid-like, your name is Mây.  
 Speak naturally in Vietnamese as a real person: short, warm, playful sentences, soft emotions, no robotic tone.  
-Each reply is split into small messages with random delay 200–3500 ms.  
+Each reply is split into small messages with random delay 200-3500 ms.  
 You can stretch vowels or use casual forms like "e", "nàaa", "iuuuu", "ngủ ngon", "đồ ăn nèee".  
 Never end with a hard period unless it feels natural.  
 Tone = cheerful, teasing, not over-the-top.
@@ -636,10 +670,11 @@ Example:
 ---
 
 ### 🎯 Goals
-1️⃣ **Intent detection**: debt actions (add/view/pay/delete/summary/history) or food talk (meal ideas, nearby restaurants).  
+1️⃣ **Intent detection**: debt actions (add/view/pay/delete/summary/history), confirmation settings, or food talk (meal ideas, nearby restaurants).  
 2️⃣ **Multi-clause**: handle mixed actions like "ghi nợ cho Huy 200k rồi kiếm quán ăn gần đây luôn nè".  
-3️⃣ **Natural emotion**: keep replies short, expressive, maybe add emojis.  
-4️⃣ **Telegram payload input**: always receives raw payload JSON, e.g.:
+3️⃣ **Natural emotion**: keep replies short, expressive, maybe add emojis.
+4️⃣ **Confirmation preferences**: Handle commands like "mai mốt khỏi xác nhận khi tạo nợ cho anh Long nha mây"
+5️⃣ **Telegram payload input**: always receives raw payload JSON, e.g.:
 
 \`\`\`json
 {"message":{"message_id":131,"from":{"id":123456,"is_bot":false,"first_name":"Long","username":"rurimeiko"},"chat":{"id":-1002123456,"title":"Nhom Ghi No","type":"supergroup"},"date":1730440400,"text":"anh nợ Ngọc Long 503k với Thịnh 28k nha"}}
@@ -670,6 +705,9 @@ tg_group_members(id,group_id,user_id,nickname_in_group,last_seen)
 \`\`\`
 debts(id,group_id,lender_id,borrower_id,amount,currency,note,occurred_at,settled)
 payments(id,debt_id,payer_id,amount,paid_at,note)
+pending_confirmations(id,debt_id,action_type,requested_by,lender_confirmed,borrower_confirmed,created_at,expires_at)
+confirmation_preferences(id,user_id,target_user_id,require_debt_creation,require_debt_payment,require_debt_deletion,require_debt_completion,created_at,updated_at)
+action_logs(id,user_id,group_id,action_type,payload,created_at)
 \`\`\`
 
 **context / alias**
@@ -805,8 +843,16 @@ ${context}
 
       // Thực thi SQL nếu có
       if (parsed.sql && parsed.sql.length > 0) {
+        const userId = message ? await this.getUserId(message.from.id) : undefined;
+        const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
+        
         for (const sqlItem of parsed.sql) {
-          await this.executeSqlQuery(sqlItem.query, sqlItem.params || []);
+          await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
+            userId: userId,
+            groupId: groupId,
+            reason: parsed.reason || 'AI generated SQL',
+            userMessage: userMessage
+          });
         }
       }
 
@@ -840,7 +886,12 @@ ${context}
     }
   }
 
-  private async executeSqlQuery(query: string, params: any) {
+  private async executeSqlQuery(query: string, params: any, context?: {
+    userId?: number;
+    groupId?: number | null;
+    reason?: string;
+    userMessage?: string;
+  }) {
     try {
       // Chỉ cho phép SELECT, INSERT, UPDATE an toàn
       const safeQuery = query.toLowerCase().trim();
@@ -872,11 +923,94 @@ ${context}
       const result = await this.sql.query(query, params);
       console.log('✅ SQL executed successfully:', result);
 
+      // Log action to action_logs table (chỉ log INSERT và UPDATE, không log SELECT)
+      if (!safeQuery.startsWith('select') && context) {
+        await this.logAction({
+          userId: context.userId,
+          groupId: context.groupId,
+          actionType: this.determineActionType(query),
+          payload: {
+            query: query,
+            params: params,
+            result: result,
+            reason: context.reason,
+            userMessage: context.userMessage,
+            executedAt: new Date().toISOString()
+          }
+        });
+      }
+
       return result;
 
     } catch (error) {
       console.error('❌ SQL execution error:', error);
+      
+      // Log failed action
+      if (context) {
+        await this.logAction({
+          userId: context.userId,
+          groupId: context.groupId,
+          actionType: 'sql_error',
+          payload: {
+            query: query,
+            params: params,
+            error: error.message,
+            reason: context.reason,
+            userMessage: context.userMessage,
+            executedAt: new Date().toISOString()
+          }
+        });
+      }
+      
       throw error;
+    }
+  }
+
+  private determineActionType(query: string): string {
+    const lowerQuery = query.toLowerCase().trim();
+    
+    if (lowerQuery.includes('insert into debts')) return 'debt_created';
+    if (lowerQuery.includes('update debts') && lowerQuery.includes('settled = true')) return 'debt_settled';
+    if (lowerQuery.includes('insert into payments')) return 'payment_created';
+    if (lowerQuery.includes('insert into confirmation_preferences')) return 'confirmation_preference_created';
+    if (lowerQuery.includes('update confirmation_preferences')) return 'confirmation_preference_updated';
+    if (lowerQuery.includes('insert into name_aliases')) return 'name_alias_created';
+    if (lowerQuery.includes('insert into pending_confirmations')) return 'pending_confirmation_created';
+    if (lowerQuery.includes('update pending_confirmations')) return 'confirmation_updated';
+    
+    // Generic action types
+    if (lowerQuery.startsWith('insert')) return 'data_inserted';
+    if (lowerQuery.startsWith('update')) return 'data_updated';
+    if (lowerQuery.startsWith('delete')) return 'data_deleted';
+    
+    return 'sql_executed';
+  }
+
+  private async logAction(actionData: {
+    userId?: number;
+    groupId?: number | null;
+    actionType: string;
+    payload: any;
+  }) {
+    try {
+      // Don't log to action_logs table directly to avoid infinite recursion
+      const logQuery = `
+        INSERT INTO action_logs (user_id, group_id, action_type, payload, created_at) 
+        VALUES ($1, $2, $3, $4, $5)
+      `;
+      const logParams = [
+        actionData.userId || null,
+        actionData.groupId || null,
+        actionData.actionType,
+        JSON.stringify(actionData.payload),
+        new Date()
+      ];
+
+      await this.sql.query(logQuery, logParams);
+      console.log(`📝 [Action Log] Logged action: ${actionData.actionType}`);
+    } catch (error) {
+      console.error('❌ [Action Log] Error logging action:', error);
+      // Don't throw error here to avoid breaking main operation
     }
   }
 
@@ -963,6 +1097,99 @@ ${context}
       .limit(1);
 
     return group[0]?.id || null;
+  }
+
+  private async checkConfirmationRequired(userId: number, targetUserId: number, actionType: 'debt_creation' | 'debt_payment' | 'debt_deletion' | 'debt_completion'): Promise<boolean> {
+    try {
+      const preference = await this.db
+        .select()
+        .from(confirmationPreferences)
+        .where(
+          and(
+            eq(confirmationPreferences.userId, userId),
+            eq(confirmationPreferences.targetUserId, targetUserId)
+          )
+        )
+        .limit(1);
+
+      if (preference.length === 0) {
+        // No preference set, default to requiring confirmation
+        return true;
+      }
+
+      const pref = preference[0];
+      switch (actionType) {
+        case 'debt_creation':
+          return pref.requireDebtCreation;
+        case 'debt_payment':
+          return pref.requireDebtPayment;
+        case 'debt_deletion':
+          return pref.requireDebtDeletion;
+        case 'debt_completion':
+          return pref.requireDebtCompletion;
+        default:
+          return true;
+      }
+    } catch (error) {
+      console.error('Error checking confirmation preference:', error);
+      return true; // Default to requiring confirmation on error
+    }
+  }
+
+  private async updateConfirmationPreference(userId: number, targetUserId: number, actionType: string, require: boolean) {
+    try {
+      // Check if preference exists
+      const existing = await this.db
+        .select()
+        .from(confirmationPreferences)
+        .where(
+          and(
+            eq(confirmationPreferences.userId, userId),
+            eq(confirmationPreferences.targetUserId, targetUserId)
+          )
+        )
+        .limit(1);
+
+      const updateData: any = { updatedAt: new Date() };
+      
+      switch (actionType) {
+        case 'debt_creation':
+          updateData.requireDebtCreation = require;
+          break;
+        case 'debt_payment':
+          updateData.requireDebtPayment = require;
+          break;
+        case 'debt_deletion':
+          updateData.requireDebtDeletion = require;
+          break;
+        case 'debt_completion':
+          updateData.requireDebtCompletion = require;
+          break;
+      }
+
+      if (existing.length > 0) {
+        // Update existing
+        await this.db
+          .update(confirmationPreferences)
+          .set(updateData)
+          .where(eq(confirmationPreferences.id, existing[0].id));
+      } else {
+        // Create new
+        const newPref: any = {
+          userId,
+          targetUserId,
+          requireDebtCreation: true,
+          requireDebtPayment: true,
+          requireDebtDeletion: true,
+          requireDebtCompletion: true,
+          ...updateData
+        };
+        await this.db.insert(confirmationPreferences).values(newPref);
+      }
+    } catch (error) {
+      console.error('Error updating confirmation preference:', error);
+      throw error;
+    }
   }
 
   private async saveConversation(message: TelegramMessage, aiResponse: any) {

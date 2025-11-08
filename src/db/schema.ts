@@ -138,6 +138,22 @@ export const pendingConfirmations = pgTable('pending_confirmations', {
   expiresAt: timestamp('expires_at'), // auto-expire after some time
 });
 
+// Confirmation Preferences - user preferences for when confirmations are required
+export const confirmationPreferences = pgTable('confirmation_preferences', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
+  targetUserId: bigint('target_user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
+  // Confirmation settings
+  requireDebtCreation: boolean('require_debt_creation').default(true),
+  requireDebtPayment: boolean('require_debt_payment').default(true),
+  requireDebtDeletion: boolean('require_debt_deletion').default(true),
+  requireDebtCompletion: boolean('require_debt_completion').default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').defaultNow(),
+}, (table) => ({
+  uniqueUserTarget: unique().on(table.userId, table.targetUserId),
+}));
+
 // Relations
 export const tgUsersRelations = relations(tgUsers, ({ many }) => ({
   groupMemberships: many(tgGroupMembers),
@@ -183,3 +199,5 @@ export type NameAlias = typeof nameAliases.$inferSelect;
 export type NewNameAlias = typeof nameAliases.$inferInsert;
 export type PendingConfirmation = typeof pendingConfirmations.$inferSelect;
 export type NewPendingConfirmation = typeof pendingConfirmations.$inferInsert;
+export type ConfirmationPreference = typeof confirmationPreferences.$inferSelect;
+export type NewConfirmationPreference = typeof confirmationPreferences.$inferInsert;
