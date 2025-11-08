@@ -272,10 +272,10 @@ export class DatabaseService {
 
     const pref = prefs[0];
     switch (actionType) {
-      case 'debt_creation': return pref.requireDebtCreation;
-      case 'debt_payment': return pref.requireDebtPayment;
-      case 'debt_deletion': return pref.requireDebtDeletion;
-      case 'debt_completion': return pref.requireDebtCompletion;
+      case 'debt_creation': return pref.requireDebtCreation || true;
+      case 'debt_payment': return pref.requireDebtPayment || true;
+      case 'debt_deletion': return pref.requireDebtDeletion || true;
+      case 'debt_completion': return pref.requireDebtCompletion || true;
       default: return true;
     }
   }
@@ -364,13 +364,13 @@ export class DatabaseService {
       // Save message
       await this.db.insert(chatMessages).values({
         sessionId,
-        sender: message.from?.first_name || 'Unknown',
+        sender: 'user',
         senderTgId: message.from?.id || 0,
         messageText: message.text || '',
         intent: aiResponse?.intent || 'unknown',
         sqlQuery: aiResponse?.sqlQuery || null,
         sqlParams: aiResponse?.sqlParams ? JSON.stringify(aiResponse.sqlParams) : null,
-      });
+      } as any);
 
     } catch (error) {
       console.error('❌ Failed to save conversation:', error);

@@ -67,15 +67,10 @@ export class StickerService {
         if (message.sticker) {
           const stickerId = this.getStickerForSituation(message.sticker);
           if (stickerId) {
-            await telegramApi.sendSticker({
-              chat_id: chatId,
-              sticker: stickerId,
-              reply_to_message_id: replyToMessageId,
-              message_thread_id: messageThreadId
-            });
+            await telegramApi.sendSticker(chatId, stickerId, messageThreadId);
             
             // Small delay after sticker before text
-            await new Promise(resolve => setTimeout(resolve, 500));
+            // await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
 

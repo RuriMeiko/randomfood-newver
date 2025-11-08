@@ -77,7 +77,7 @@ export class AIAnalyzerService {
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
       });
 
-      const responseText = result.candidates[0].content.parts[0].text;
+      const responseText = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
       console.log('🤖 [AI] Raw response:', responseText);
 
       const parsed = JSON.parse(responseText);
