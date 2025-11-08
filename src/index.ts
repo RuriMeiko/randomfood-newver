@@ -39,7 +39,7 @@ export default {
 
         // 📝 LOG: In ra message được xử lý
         console.log('=== PROCESSING MESSAGE ===');
-        console.log('From:', message.from.first_name, `(ID: ${message.from.id})`);
+        console.log('From:', message.from?.first_name, `(ID: ${message.from?.id})`);
         console.log('Chat:', message.chat.type, `(ID: ${message.chat.id})`);
         console.log('Text:', message.text);
 
@@ -91,35 +91,6 @@ export default {
       }
     }
 
-    // API endpoint để test bot với message input
-    if (url.pathname === '/test' && request.method === 'POST') {
-      try {
-        const body = await request.json() as { message: TelegramMessage };
-
-        // 📝 LOG: In ra test input
-        console.log('=== TEST INPUT ===');
-        console.log('Test Body:', JSON.stringify(body, null, 2));
-        console.log('Message Text:', body.message.text);
-        console.log('From:', body.message.from.first_name, `(ID: ${body.message.from.id})`);
-
-        const response = await aiBot.processMessage(body.message);
-
-        // 📝 LOG: In ra test response
-        console.log('=== TEST RESPONSE ===');
-        console.log('AI Response:', response);
-
-        return new Response(JSON.stringify({ response }), {
-          headers: { 'Content-Type': 'application/json' }
-        });
-      } catch (error: any) {
-        console.error('❌ Test error:', error);
-        return new Response(JSON.stringify({ error: error.message }), {
-          status: 500,
-          headers: { 'Content-Type': 'application/json' }
-        });
-      }
-    }
-
     return new Response(JSON.stringify({
       message: 'Debt Tracking Bot API',
       endpoints: {
@@ -161,7 +132,7 @@ function shouldRespondInGroup(body: any): boolean {
 
     // 2. Kiểm tra các từ khóa trigger
     const text = message.text.toLowerCase();
-    const keywords = ['ghi nợ', 'bot', 'mây'];
+    const keywords = ['nợ', 'meismaybot', 'mây'];
 
     for (const keyword of keywords) {
       if (text.includes(keyword)) {
@@ -171,7 +142,7 @@ function shouldRespondInGroup(body: any): boolean {
     }
 
     // 3. Kiểm tra mention bot (nếu có @username)
-    if (text.includes('@') && text.includes('bot')) {
+    if (text.includes('@') && text.includes('meismaybot')) {
       console.log('✅ Bot mention found - responding');
       return true;
     }
