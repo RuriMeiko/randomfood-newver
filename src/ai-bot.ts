@@ -555,13 +555,23 @@ ${context}
         const userId = message ? await this.getUserId(message.from.id) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
         
+        let sqlResults = [];
         for (const sqlItem of parsed.sql) {
-          await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
+          const result = await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
             userId: userId,
             groupId: groupId,
             reason: parsed.reason || 'AI generated SQL from messages',
             userMessage: userMessage
           });
+          sqlResults.push(result);
+        }
+        
+        // Nếu là SELECT query và có kết quả, tạo thêm messages với thông tin chi tiết
+        if (parsed.sql[0].query.toLowerCase().trim().startsWith('select') && sqlResults[0] && sqlResults[0].length > 0) {
+          const additionalMessages = await this.generateMessagesFromQueryResult(sqlResults[0], userMessage);
+          if (additionalMessages.length > 0) {
+            parsed.messages = [...(parsed.messages || []), ...additionalMessages];
+          }
         }
       }
 
@@ -846,13 +856,23 @@ ${context}
         const userId = message ? await this.getUserId(message.from.id) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
         
+        let sqlResults = [];
         for (const sqlItem of parsed.sql) {
-          await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
+          const result = await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
             userId: userId,
             groupId: groupId,
             reason: parsed.reason || 'AI generated SQL',
             userMessage: userMessage
           });
+          sqlResults.push(result);
+        }
+        
+        // Nếu là SELECT query và có kết quả, tạo thêm messages với thông tin chi tiết
+        if (parsed.sql[0].query.toLowerCase().trim().startsWith('select') && sqlResults[0] && sqlResults[0].length > 0) {
+          const additionalMessages = await this.generateMessagesFromQueryResult(sqlResults[0], userMessage);
+          if (additionalMessages.length > 0) {
+            parsed.messages = [...(parsed.messages || []), ...additionalMessages];
+          }
         }
       }
 
@@ -984,6 +1004,56 @@ ${context}
     if (lowerQuery.startsWith('delete')) return 'data_deleted';
     
     return 'sql_executed';
+  }
+
+  private async generateMessagesFromQueryResult(queryResult: any[], userMessage: string): Promise<{ text: string; delay: string }[]> {
+    const messages: { text: string; delay: string }[] = [];
+
+    // Check if this is a debt query result
+    if (queryResult[0] && ('lender_name' in queryResult[0] || 'borrower_name' in queryResult[0])) {
+      let totalOwed = 0;
+      let totalLent = 0;
+      
+      for (const debt of queryResult) {
+        const amount = parseFloat(debt.amount) || 0;
+        
+        if (debt.borrower_name && debt.lender_name) {
+          // Format amount nicely
+          const formattedAmount = new Intl.NumberFormat('vi-VN').format(amount);
+          
+          if (userMessage.includes('check') || userMessage.includes('kiểm tra') || userMessage.includes('xem')) {
+            // Debt summary format
+            if (debt.lender_name !== debt.borrower_name) {
+              if (amount > 0) {
+                messages.push({
+                  text: `ơ anh nợ ${debt.lender_name} ${formattedAmount} ${debt.currency} nè`,
+                  delay: (1200 + messages.length * 300).toString()
+                });
+                totalOwed += amount;
+              }
+            }
+          }
+        }
+      }
+      
+      // Add summary message if there are debts
+      if (totalOwed > 0) {
+        const formattedTotal = new Intl.NumberFormat('vi-VN').format(totalOwed);
+        messages.push({
+          text: `tổng cộng anh nợ ${formattedTotal} VND đóoo 💸`,
+          delay: (1500 + messages.length * 300).toString()
+        });
+      } else if (queryResult.length === 0) {
+        messages.push({
+          text: `ơ anh không nợ ai cả nè, sạch sẽ luônn 🎉`,
+          delay: "1200"
+        });
+      }
+    }
+
+    // Handle other types of query results here if needed
+    
+    return messages;
   }
 
   private async logAction(actionData: {
