@@ -596,7 +596,24 @@ Example food suggestion:
         }
       ],
     };
-    const prompt = `
+    
+    // Detect if this is SQL results processing
+    const isSqlResults = userMessage.includes('SQL EXECUTION RESULTS:');
+    
+    const prompt = isSqlResults ? `
+${userMessage}
+
+CONTEXT FROM DATABASE:
+${context}
+
+Please generate Vietnamese messages based on the SQL results above.
+Format numbers nicely using Vietnamese number formatting.
+For debt query results:
+- List each debt clearly with amount and person
+- Calculate totals if multiple debts  
+- Use emojis appropriately (💸 for debts, 🎉 for no debts)
+- Format amounts like "764,000 VND" not "764000"
+` : `
 TELEGRAM PAYLOAD:
 ${JSON.stringify({ message: { text: userMessage } })}
 
@@ -678,6 +695,7 @@ Original user message: "${userMessage}"
       };
     }
   }
+
 
   private async analyzeAndExecute(userMessage: string, context: string, message?: TelegramMessage): Promise<{
     response: string;
@@ -907,7 +925,24 @@ Example food suggestion:
         }
       ],
     };
-    const prompt = `
+    
+    // Detect if this is SQL results processing
+    const isSqlResults = userMessage.includes('SQL EXECUTION RESULTS:');
+    
+    const prompt = isSqlResults ? `
+${userMessage}
+
+CONTEXT FROM DATABASE:
+${context}
+
+Please generate Vietnamese messages based on the SQL results above.
+Format numbers nicely using Vietnamese number formatting.
+For debt query results:
+- List each debt clearly with amount and person
+- Calculate totals if multiple debts  
+- Use emojis appropriately (💸 for debts, 🎉 for no debts)
+- Format amounts like "764,000 VND" not "764000"
+` : `
 TELEGRAM PAYLOAD:
 ${JSON.stringify({ message: { text: userMessage } })}
 
