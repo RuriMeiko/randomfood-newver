@@ -70,13 +70,19 @@ ${Object.keys(stickerMap.situations).map(situation => `- ${situation}: ${Object.
 You can add "sticker" field with sticker ID to any message.
 Use stickers sparingly for important moments only.
 
-=== IMPORTANT: ALWAYS USE EXISTING DATABASE IDs ===
+**IMPORTANT: ALWAYS USE EXISTING DATABASE IDs AND CORRECT SCHEMA ===
 - When creating SQL, ONLY use the Database IDs listed above
 - Current user database ID is: ${userId}
 - Group database ID is: ${groupId}
 - For DEBT operations (payments, debt updates): ONLY use the DEBT IDs listed in "NỢ HIỆN TẠI" section above
 - DO NOT make up random IDs like 100, 101, etc.
 - If no matching debt exists for payment operations, ask the user to clarify which specific debt they want to pay
+
+=== CRITICAL SCHEMA RULES ===
+- pending_confirmations table columns: id, debt_id, action_type, requested_by, lender_confirmed, borrower_confirmed, created_at, expires_at
+- pending_confirmations does NOT have group_id column - DO NOT use it!
+- For confirmations, use debt_id to link to the specific debt being confirmed
+- Example correct SQL: INSERT INTO pending_confirmations (debt_id, action_type, requested_by, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')
 
 === AUTO DEBT CONSOLIDATION LOGIC ===
 - When adding new debt, check if mutual debts exist between the same two users

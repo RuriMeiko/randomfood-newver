@@ -377,6 +377,47 @@ export class DatabaseService {
     }
   }
 
+  async createPendingConfirmation(debtId: number, actionType: string, requestedBy: number) {
+    try {
+      const result = await this.db.insert(pendingConfirmations).values({
+        debtId: debtId,
+        actionType: actionType,
+        requestedBy: requestedBy,
+        lenderConfirmed: false,
+        borrowerConfirmed: false,
+        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
+      }).returning({ id: pendingConfirmations.id });
+      
+      return result[0].id;
+    } catch (error) {
+      console.error('❌ Failed to create pending confirmation:', error);
+      throw error;
+    }
+  }
+
+  async getPendingConfirmations(userId: number, groupId: number | null) {
+    return await this.db
+      .select({
+        id: pendingConfirmations.id,
+        debtId: pendingConfirmations.debtId,
+        actionType: pendingConfirmations.actionType,
+        requestedBy: pendingConfirmations.requestedBy,
+        lenderConfirmed: pendingConfirmations.lenderConfirmed,
+        borrowerConfirmed: pendingConfirmations.borrowerConfirmed,
+        createdAt: pendingConfirmations.createdAt,
+        expiresAt: pendingConfirmations.expiresAt,
+      })
+      .from(pendingConfirmations)
+      .leftJoin(debts, eq(pendingConfirmations.debtId, debts.id))
+      .where(
+        and(
+          groupId ? eq(debts.groupId, groupId) : sql`${debts.groupId} IS NULL`,
+          sql`${pendingConfirmations.expiresAt} > NOW()` // Only non-expired confirmations
+        )
+      )
+      .limit(10);
+  }
+
   private determineActionType(query: string): ActionType {
     const lowerQuery = query.toLowerCase().trim();
 

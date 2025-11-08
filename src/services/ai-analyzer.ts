@@ -286,9 +286,9 @@ From this, AI must:
 **core**
 
 \`\`\`
-tg_users(id,tg_id,tg_username,display_name,real_name,created_at)
+tg_users(id,tg_id,tg_username,display_name,real_name,created_at,updated_at)
 tg_groups(id,tg_chat_id,title,type,created_at)
-tg_group_members(id,group_id,user_id,nickname_in_group,last_seen)
+tg_group_members(id,group_id,user_id,joined_at,nickname_in_group,last_seen)
 \`\`\`
 
 **debts**
@@ -301,10 +301,20 @@ confirmation_preferences(id,user_id,target_user_id,require_debt_creation,require
 action_logs(id,user_id,group_id,action_type,payload,created_at)
 \`\`\`
 
+**CRITICAL SCHEMA NOTES:**
+- pending_confirmations table does NOT have group_id column!
+- tg_group_members has UNIQUE constraint on (group_id, user_id)
+- name_aliases has UNIQUE constraint on (owner_user_id, alias_text) 
+- confirmation_preferences has UNIQUE constraint on (user_id, target_user_id)
+- tg_users.tg_id is UNIQUE
+- tg_groups.tg_chat_id is UNIQUE
+
+Correct pending_confirmations example: INSERT INTO pending_confirmations (debt_id, action_type, requested_by, expires_at) VALUES ($1, $2, $3, NOW() + INTERVAL '24 hours')
+
 **context / alias**
 
 \`\`\`
-chat_sessions(id,group_id,user_id,started_at,last_activity,active)
+chat_sessions(id,group_id,user_id,started_at,last_activity,context_hash,active)
 chat_messages(id,session_id,sender,sender_tg_id,message_text,delay_ms,intent,sql_query,sql_params,created_at)
 name_aliases(id,owner_user_id,alias_text,ref_user_id,confidence,last_used)
 \`\`\`
@@ -312,7 +322,7 @@ name_aliases(id,owner_user_id,alias_text,ref_user_id,confidence,last_used)
 **food**
 
 \`\`\`
-food_items(id,name,description,category,region,image_url,source_url)
+food_items(id,name,description,category,region,image_url,source_url,created_at)
 food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
 \`\`\`
 
