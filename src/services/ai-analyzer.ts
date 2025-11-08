@@ -433,7 +433,7 @@ Example food suggestion:
 
 **CONFIRMATION RULES**
 
-* For confirmation requests, use format: "tên @username xác nhận mây" (must include "mây" to trigger bot)
+* For confirmation requests, use format: "xác nhận nha mây" (must include "mây" to trigger bot)
 * Example: "@HThinh90 xác nhận mây", "@Dragonccm xác nhận mây"  
 * Do NOT use "đồng ý xoá" or other phrases - only "xác nhận mây"
 * Keep confirmation messages short and clear
