@@ -242,7 +242,7 @@ Original user message: "${userMessage}"
     if (parsed.messages && parsed.messages.length > 0) {
       return parsed.messages.map((msg: { text: any; }) => msg.text).join(' ');
     }
-    return 'Xin lỗi, tôi không hiểu.';
+    return 'Xin lỗi, em chưa hiểu lắm.';
   }
 
   private getSystemPrompt(): string {
