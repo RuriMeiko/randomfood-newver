@@ -13,7 +13,7 @@ import {
   confirmationPreferences,
   payments
 } from './db/schema';
-import TelegramApi from '@/telegram/api';
+import TelegramApi from '@/telegram/api.js';
 const stickerMap = require('@/stickers/sticker-map.json');
 import { eq, and, desc, sql } from 'drizzle-orm';
 
@@ -234,7 +234,7 @@ export class AIBot {
 
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
-      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context, message);
+      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text || "", context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
@@ -287,7 +287,7 @@ export class AIBot {
 
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
-      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context, message);
+      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text || "", context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
@@ -320,14 +320,14 @@ export class AIBot {
     const existingUser = await this.db
       .select()
       .from(tgUsers)
-      .where(eq(tgUsers.tgId, message.from.id))
+      .where(eq(tgUsers.tgId, message.from?.id || 0))
       .limit(1);
 
     if (existingUser.length === 0) {
       await this.db.insert(tgUsers).values({
-        tgId: message.from.id,
-        tgUsername: message.from.username,
-        displayName: `${message.from.first_name} ${message.from.last_name || ''}`.trim(),
+        tgId: message.from?.id || 0,
+        tgUsername: message.from?.username || '',
+        displayName: `${message.from?.first_name || ''} ${message.from?.last_name || ''}`.trim(),
       });
     }
 
@@ -351,7 +351,7 @@ export class AIBot {
   }
 
   private async buildContext(message: TelegramMessage): Promise<string> {
-    const userId = await this.getUserId(message.from.id);
+    const userId = await this.getUserId(message.from?.id || 0);
     const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
 
     // Lấy thông tin tất cả users trong group/chat
@@ -429,7 +429,7 @@ export class AIBot {
     // Tạo context string với đầy đủ user mapping
     const context = `
 === NGỮ CẢNH HIỆN TẠI ===
-Current User: ${message.from.first_name} (Telegram ID: ${message.from.id}, Database ID: ${userId})
+Current User: ${message.from?.first_name || ''} (Telegram ID: ${message.from?.id || 0}, Database ID: ${userId})
 Chat: ${message.chat.type === 'private' ? 'Private' : message.chat.title}
 Group ID: ${groupId}
 
@@ -775,7 +775,7 @@ ${context}
 
       // Thực thi SQL nếu có
       if (parsed.sql && parsed.sql.length > 0) {
-        const userId = message ? await this.getUserId(message.from.id) : undefined;
+        const userId = message ? await this.getUserId(message.from?.id || 0) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
 
         let sqlResults = [];
@@ -815,7 +815,7 @@ Original user message: "${userMessage}"
         sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
       };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [AI] Error in AI analysis:', error);
       console.error('❌ [AI] Error details:', error.message);
 
@@ -1090,8 +1090,8 @@ ${context}
         contents: [{ role: 'user', parts: [{ text: prompt }] }]
       });
 
-      // Get response text from Gemini API
-      const responseText = result.candidates[0].content.parts[0].text;
+      // Get response text from Gemini API (safely access nested arrays/objects)
+      const responseText = result?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
 
       console.log('🤖 [AI] Raw response:', responseText);
 
@@ -1101,7 +1101,7 @@ ${context}
 
       // Thực thi SQL nếu có
       if (parsed.sql && parsed.sql.length > 0) {
-        const userId = message ? await this.getUserId(message.from.id) : undefined;
+        const userId = message ? await this.getUserId(message.from?.id || 0) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
 
         let sqlResults = [];
@@ -1131,7 +1131,7 @@ Original user message: "${userMessage}"
           const continueResponse = await this.analyzeAndExecute(sqlResultContext, context, message);
           // Merge response text
           const currentResponse = parsed.messages && parsed.messages.length > 0 ?
-            parsed.messages.map(msg => msg.text).join(' ') : '';
+            parsed.messages.map((msg: { text: string; }) => msg.text).join(' ') : '';
           const additionalResponse = continueResponse.response || '';
 
           return {
@@ -1146,7 +1146,7 @@ Original user message: "${userMessage}"
       // Tạo response text từ messages
       let responseMsg = '';
       if (parsed.messages && parsed.messages.length > 0) {
-        responseMsg = parsed.messages.map(msg => msg.text).join(' ');
+        responseMsg = parsed.messages.map((msg: { text: any; }) => msg.text).join(' ');
       }
 
       return {
@@ -1156,7 +1156,7 @@ Original user message: "${userMessage}"
         sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
       };
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ [AI] Error in AI analysis:', error);
       console.error('❌ [AI] Error details:', error.message);
 
@@ -1229,7 +1229,7 @@ Original user message: "${userMessage}"
 
       return result;
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('❌ SQL execution error:', error);
 
       // Log failed action
@@ -1494,13 +1494,13 @@ Original user message: "${userMessage}"
       const pref = preference[0];
       switch (actionType) {
         case 'debt_creation':
-          return pref.requireDebtCreation;
+          return pref.requireDebtCreation ?? true;
         case 'debt_payment':
-          return pref.requireDebtPayment;
+          return pref.requireDebtPayment ?? true;
         case 'debt_deletion':
-          return pref.requireDebtDeletion;
+          return pref.requireDebtDeletion ?? true;
         case 'debt_completion':
-          return pref.requireDebtCompletion;
+          return pref.requireDebtCompletion ?? true;
         default:
           return true;
       }
@@ -1568,7 +1568,7 @@ Original user message: "${userMessage}"
 
   private async saveConversation(message: TelegramMessage, aiResponse: any) {
     try {
-      const userId = await this.getUserId(message.from.id);
+      const userId = await this.getUserId(message.from?.id || 0);
       const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
 
       // Tìm hoặc tạo session
@@ -1596,7 +1596,7 @@ Original user message: "${userMessage}"
       await this.db.insert(chatMessages).values({
         sessionId: session[0].id,
         sender: 'user',
-        senderTgId: message.from.id,
+        senderTgId: message.from?.id || 0,
         messageText: message.text || 'Empty message',
         intent: aiResponse.intent || 'unknown',
         sqlQuery: aiResponse.sqlQuery || null,
@@ -1606,7 +1606,7 @@ Original user message: "${userMessage}"
       // Lưu AI response - xử lý cả messages array và response string
       let responseText = 'No response';
       if (aiResponse.messages && Array.isArray(aiResponse.messages) && aiResponse.messages.length > 0) {
-        responseText = aiResponse.messages.map(msg => msg.text || '').join(' ');
+        responseText = aiResponse.messages.map((msg: { text: any; }) => msg.text || '').join(' ');
       } else if (aiResponse.response) {
         responseText = aiResponse.response;
       }
