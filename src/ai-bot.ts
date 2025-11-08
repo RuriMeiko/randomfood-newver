@@ -19,25 +19,152 @@ import { eq, and, desc, sql } from 'drizzle-orm';
 
 export interface TelegramMessage {
   message_id: number;
-  from: {
-    id: number;
-    is_bot: boolean;
-    first_name: string;
-    last_name?: string;
-    username?: string;
-    language_code?: string;
-  };
-  chat: {
-    id: number;
-    first_name?: string;
-    last_name?: string;
-    username?: string;
-    title?: string;
-    type: 'private' | 'group' | 'supergroup';
-  };
+  message_thread_id?: number;
+  from?: TelegramUser;
+  sender_chat?: TelegramChat;
+  sender_boost_count?: number;
+  sender_business_bot?: TelegramUser;
   date: number;
-  text: string;
+  business_connection_id?: string;
+  chat: TelegramChat;
+
+  forward_origin?: MessageOrigin;
+  is_topic_message?: boolean;
+  is_automatic_forward?: boolean;
+
+  reply_to_message?: TelegramMessage;
+  external_reply?: ExternalReplyInfo;
+  quote?: TextQuote;
+  reply_to_story?: Story;
+  reply_to_checklist_task_id?: number;
+
+  via_bot?: TelegramUser;
+  edit_date?: number;
+
+  has_protected_content?: boolean;
+  is_from_offline?: boolean;
+  is_paid_post?: boolean;
+
+  media_group_id?: string;
+  author_signature?: string;
+  paid_star_count?: number;
+
+  text?: string;
+  entities?: MessageEntity[];
+  link_preview_options?: LinkPreviewOptions;
+
+  animation?: Animation;
+  audio?: Audio;
+  document?: Document;
+  photo?: PhotoSize[];
+  sticker?: Sticker;
+  story?: Story;
+  video?: Video;
+  video_note?: VideoNote;
+  voice?: Voice;
+  caption?: string;
+  caption_entities?: MessageEntity[];
+  show_caption_above_media?: boolean;
+  has_media_spoiler?: boolean;
+
+  contact?: Contact;
+  dice?: Dice;
+  game?: Game;
+  poll?: Poll;
+  venue?: Venue;
+  location?: Location;
+
+  new_chat_members?: TelegramUser[];
+  left_chat_member?: TelegramUser;
+  new_chat_title?: string;
+  new_chat_photo?: PhotoSize[];
+  delete_chat_photo?: true;
+
+  group_chat_created?: true;
+  supergroup_chat_created?: true;
+  channel_chat_created?: true;
+
+  message_auto_delete_timer_changed?: MessageAutoDeleteTimerChanged;
+  migrate_to_chat_id?: number;
+  migrate_from_chat_id?: number;
+  pinned_message?: TelegramMessage;
+
+  invoice?: Invoice;
+  successful_payment?: SuccessfulPayment;
+  refunded_payment?: RefundedPayment;
+
+  users_shared?: UsersShared;
+  chat_shared?: ChatShared;
+
+  connected_website?: string;
+  write_access_allowed?: WriteAccessAllowed;
+
+  passport_data?: PassportData;
+  proximity_alert_triggered?: ProximityAlertTriggered;
+
+  video_chat_scheduled?: VideoChatScheduled;
+  video_chat_started?: VideoChatStarted;
+  video_chat_ended?: VideoChatEnded;
+  video_chat_participants_invited?: VideoChatParticipantsInvited;
+
+  reply_markup?: InlineKeyboardMarkup;
 }
+
+/** === Supporting Interfaces === */
+
+export interface TelegramUser {
+  id: number;
+  is_bot: boolean;
+  first_name: string;
+  last_name?: string;
+  username?: string;
+  language_code?: string;
+}
+
+export interface TelegramChat {
+  id: number;
+  type: 'private' | 'group' | 'supergroup' | 'channel';
+  title?: string;
+  username?: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+/** Define other optional interfaces as placeholders if needed */
+export interface MessageEntity { [key: string]: any }
+export interface MessageOrigin { [key: string]: any }
+export interface ExternalReplyInfo { [key: string]: any }
+export interface TextQuote { [key: string]: any }
+export interface Story { [key: string]: any }
+export interface LinkPreviewOptions { [key: string]: any }
+export interface Animation { [key: string]: any }
+export interface Audio { [key: string]: any }
+export interface Document { [key: string]: any }
+export interface PhotoSize { [key: string]: any }
+export interface Sticker { [key: string]: any }
+export interface Video { [key: string]: any }
+export interface VideoNote { [key: string]: any }
+export interface Voice { [key: string]: any }
+export interface Contact { [key: string]: any }
+export interface Dice { [key: string]: any }
+export interface Game { [key: string]: any }
+export interface Poll { [key: string]: any }
+export interface Venue { [key: string]: any }
+export interface Location { [key: string]: any }
+export interface MessageAutoDeleteTimerChanged { [key: string]: any }
+export interface Invoice { [key: string]: any }
+export interface SuccessfulPayment { [key: string]: any }
+export interface RefundedPayment { [key: string]: any }
+export interface UsersShared { [key: string]: any }
+export interface ChatShared { [key: string]: any }
+export interface WriteAccessAllowed { [key: string]: any }
+export interface PassportData { [key: string]: any }
+export interface ProximityAlertTriggered { [key: string]: any }
+export interface VideoChatScheduled { [key: string]: any }
+export interface VideoChatStarted { [key: string]: any }
+export interface VideoChatEnded { [key: string]: any }
+export interface VideoChatParticipantsInvited { [key: string]: any }
+export interface InlineKeyboardMarkup { [key: string]: any }
 
 export class AIBot {
   private genAI: GoogleGenAI;
@@ -67,7 +194,7 @@ export class AIBot {
 
       // 3. Phân tích intent và generate SQL nếu cần
       console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
-      const aiResponse = await this.analyzeAndExecute(message.text, context, message);
+      const aiResponse = await this.analyzeAndExecute(message.text || "", context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
@@ -93,7 +220,7 @@ export class AIBot {
     hasSQL: boolean;
   }> {
     this.telegramToken = telegramToken;
-    
+
     try {
       console.log('🤖 [AIBot] Processing message with messages and stickers:', message.text);
 
@@ -608,10 +735,10 @@ Example food suggestion:
         }
       ],
     };
-    
+
     // Detect if this is SQL results processing
     const isSqlResults = userMessage.includes('SQL EXECUTION RESULTS:');
-    
+
     const prompt = isSqlResults ? `
 ${userMessage}
 
@@ -653,7 +780,7 @@ ${context}
       if (parsed.sql && parsed.sql.length > 0) {
         const userId = message ? await this.getUserId(message.from.id) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
-        
+
         let sqlResults = [];
         for (const sqlItem of parsed.sql) {
           const result = await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
@@ -664,7 +791,7 @@ ${context}
           });
           sqlResults.push(result);
         }
-        
+
         // Nếu next_action là "continue", gửi SQL result về cho AI để xử lý tiếp
         if (parsed.next_action === "continue" && sqlResults.length > 0) {
           console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
@@ -677,7 +804,7 @@ Results: ${JSON.stringify(sqlResults[0], null, 2)}
 Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
 Original user message: "${userMessage}"
 `;
-          
+
           const continueResponse = await this.analyzeAndExecuteWithMessages(sqlResultContext, context, message);
           // Merge messages từ cả 2 responses
           parsed.messages = [...(parsed.messages || []), ...(continueResponse.messages || [])];
@@ -937,10 +1064,10 @@ Example food suggestion:
         }
       ],
     };
-    
+
     // Detect if this is SQL results processing
     const isSqlResults = userMessage.includes('SQL EXECUTION RESULTS:');
-    
+
     const prompt = isSqlResults ? `
 ${userMessage}
 
@@ -982,7 +1109,7 @@ ${context}
       if (parsed.sql && parsed.sql.length > 0) {
         const userId = message ? await this.getUserId(message.from.id) : undefined;
         const groupId = message && message.chat.type !== 'private' ? await this.getGroupId(message.chat.id) : null;
-        
+
         let sqlResults = [];
         for (const sqlItem of parsed.sql) {
           const result = await this.executeSqlQuery(sqlItem.query, sqlItem.params || [], {
@@ -993,7 +1120,7 @@ ${context}
           });
           sqlResults.push(result);
         }
-        
+
         // Nếu next_action là "continue", gửi SQL result về cho AI để xử lý tiếp
         if (parsed.next_action === "continue" && sqlResults.length > 0) {
           console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
@@ -1006,13 +1133,13 @@ Results: ${JSON.stringify(sqlResults[0], null, 2)}
 Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
 Original user message: "${userMessage}"
 `;
-          
+
           const continueResponse = await this.analyzeAndExecute(sqlResultContext, context, message);
           // Merge response text
-          const currentResponse = parsed.messages && parsed.messages.length > 0 ? 
+          const currentResponse = parsed.messages && parsed.messages.length > 0 ?
             parsed.messages.map(msg => msg.text).join(' ') : '';
           const additionalResponse = continueResponse.response || '';
-          
+
           return {
             response: currentResponse + ' ' + additionalResponse,
             intent: parsed.type,
@@ -1076,7 +1203,7 @@ Original user message: "${userMessage}"
             'SELECT id FROM debts WHERE id = $1 AND settled = false',
             [debtId]
           );
-          
+
           if (!debtExists || debtExists.length === 0) {
             throw new Error(`Debt ID ${debtId} does not exist or is already settled`);
           }
@@ -1110,7 +1237,7 @@ Original user message: "${userMessage}"
 
     } catch (error) {
       console.error('❌ SQL execution error:', error);
-      
+
       // Log failed action
       if (context) {
         await this.logAction({
@@ -1127,14 +1254,14 @@ Original user message: "${userMessage}"
           }
         });
       }
-      
+
       throw error;
     }
   }
 
   private determineActionType(query: string): string {
     const lowerQuery = query.toLowerCase().trim();
-    
+
     if (lowerQuery.includes('insert into debts')) return 'debt_created';
     if (lowerQuery.includes('update debts') && lowerQuery.includes('settled = true')) return 'debt_settled';
     if (lowerQuery.includes('insert into payments')) return 'payment_created';
@@ -1143,19 +1270,19 @@ Original user message: "${userMessage}"
     if (lowerQuery.includes('insert into name_aliases')) return 'name_alias_created';
     if (lowerQuery.includes('insert into pending_confirmations')) return 'pending_confirmation_created';
     if (lowerQuery.includes('update pending_confirmations')) return 'confirmation_updated';
-    
+
     // Generic action types
     if (lowerQuery.startsWith('insert')) return 'data_inserted';
     if (lowerQuery.startsWith('update')) return 'data_updated';
     if (lowerQuery.startsWith('delete')) return 'data_deleted';
-    
+
     return 'sql_executed';
   }
 
   private getStickerForSituation(situation: string, emotion?: string): string | null {
     try {
       const stickers = stickerMap as any;
-      
+
       // Try to get situation-specific sticker first
       if (situation && stickers.situations[situation]) {
         const situationStickers = Object.keys(stickers.situations[situation]);
@@ -1164,7 +1291,7 @@ Original user message: "${userMessage}"
           return situationStickers[randomIndex];
         }
       }
-      
+
       // Try emotion-based sticker
       if (emotion && stickers.emotions[emotion]) {
         const emotionStickers = Object.keys(stickers.emotions[emotion]);
@@ -1173,14 +1300,14 @@ Original user message: "${userMessage}"
           return emotionStickers[randomIndex];
         }
       }
-      
+
       // Fallback to random sticker
       const randomStickers = Object.keys(stickers.random);
       if (randomStickers.length > 0) {
         const randomIndex = Math.floor(Math.random() * randomStickers.length);
         return randomStickers[randomIndex];
       }
-      
+
       return null;
     } catch (error) {
       console.error('Error getting sticker:', error);
@@ -1193,43 +1320,43 @@ Original user message: "${userMessage}"
 
 
   private async sendMessagesWithAIStickers(
-    chatId: number, 
-    messages: { text: string; delay: string; sticker?: string }[], 
+    chatId: number,
+    messages: { text: string; delay: string; sticker?: string }[],
     telegramToken: string,
     replyToMessageId?: number,
     messageThreadId?: number
   ) {
     const telegramApi = new TelegramApi(telegramToken);
-    
+
     for (const msg of messages) {
       // Gửi typing action trước
       await telegramApi.sendChatAction(chatId, 'typing');
       console.log('💬 Sending typing action...');
-      
+
       // Delay trước khi gửi
       const delay = parseInt(msg.delay) || 1000;
       console.log(`⏱️ Waiting ${delay}ms before sending: "${msg.text}"`);
       await new Promise(resolve => setTimeout(resolve, delay));
-      
+
       // Gửi message với proper params object
       const messageParams: any = {
         chat_id: chatId,
         text: msg.text
       };
-      
+
       // Thêm reply_to_message_id nếu có (cho supergroup)
       if (replyToMessageId) {
         messageParams.reply_to_message_id = replyToMessageId;
       }
-      
+
       // Thêm message_thread_id nếu có (cho forum/topics)
       if (messageThreadId) {
         messageParams.message_thread_id = messageThreadId;
       }
-      
+
       await telegramApi.sendMessage(messageParams);
       console.log(`📤 Sending message: ${msg.text}`);
-      
+
       // Gửi sticker nếu AI quyết định
       if (msg.sticker) {
         console.log(`🎭 AI decided to send sticker: ${msg.sticker}`);
@@ -1404,7 +1531,7 @@ Original user message: "${userMessage}"
         .limit(1);
 
       const updateData: any = { updatedAt: new Date() };
-      
+
       switch (actionType) {
         case 'debt_creation':
           updateData.requireDebtCreation = require;
