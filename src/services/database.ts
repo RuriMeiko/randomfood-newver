@@ -250,83 +250,6 @@ export class DatabaseService {
     }
   }
 
-  async checkConfirmationRequired(
-    userId: number, 
-    targetUserId: number, 
-    actionType: 'debt_creation' | 'debt_payment' | 'debt_deletion' | 'debt_completion'
-  ): Promise<boolean> {
-    const prefs = await this.db
-      .select()
-      .from(confirmationPreferences)
-      .where(
-        and(
-          eq(confirmationPreferences.userId, userId),
-          eq(confirmationPreferences.targetUserId, targetUserId)
-        )
-      )
-      .limit(1);
-
-    if (prefs.length === 0) {
-      return true; // Default to requiring confirmation
-    }
-
-    const pref = prefs[0];
-    switch (actionType) {
-      case 'debt_creation': return pref.requireDebtCreation || true;
-      case 'debt_payment': return pref.requireDebtPayment || true;
-      case 'debt_deletion': return pref.requireDebtDeletion || true;
-      case 'debt_completion': return pref.requireDebtCompletion || true;
-      default: return true;
-    }
-  }
-
-  async updateConfirmationPreference(
-    userId: number, 
-    targetUserId: number, 
-    actionType: string, 
-    require: boolean
-  ) {
-    const existing = await this.db
-      .select()
-      .from(confirmationPreferences)
-      .where(
-        and(
-          eq(confirmationPreferences.userId, userId),
-          eq(confirmationPreferences.targetUserId, targetUserId)
-        )
-      )
-      .limit(1);
-
-    const updateData: any = {};
-    switch (actionType) {
-      case 'debt_creation': updateData.requireDebtCreation = require; break;
-      case 'debt_payment': updateData.requireDebtPayment = require; break;
-      case 'debt_deletion': updateData.requireDebtDeletion = require; break;
-      case 'debt_completion': updateData.requireDebtCompletion = require; break;
-    }
-
-    if (existing.length > 0) {
-      await this.db
-        .update(confirmationPreferences)
-        .set(updateData)
-        .where(
-          and(
-            eq(confirmationPreferences.userId, userId),
-            eq(confirmationPreferences.targetUserId, targetUserId)
-          )
-        );
-    } else {
-      await this.db.insert(confirmationPreferences).values({
-        userId,
-        targetUserId,
-        requireDebtCreation: actionType === 'debt_creation' ? require : true,
-        requireDebtPayment: actionType === 'debt_payment' ? require : true,
-        requireDebtDeletion: actionType === 'debt_deletion' ? require : true,
-        requireDebtCompletion: actionType === 'debt_completion' ? require : true,
-      });
-    }
-  }
-
   async saveConversation(message: TelegramMessage, aiResponse: any) {
     try {
       const userId = await this.getUserId(message.from?.id || 0);
@@ -377,46 +300,6 @@ export class DatabaseService {
     }
   }
 
-  async createPendingConfirmation(debtId: number, actionType: string, requestedBy: number) {
-    try {
-      const result = await this.db.insert(pendingConfirmations).values({
-        debtId: debtId,
-        actionType: actionType,
-        requestedBy: requestedBy,
-        lenderConfirmed: false,
-        borrowerConfirmed: false,
-        expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000), // 24 hours from now
-      }).returning({ id: pendingConfirmations.id });
-      
-      return result[0].id;
-    } catch (error) {
-      console.error('❌ Failed to create pending confirmation:', error);
-      throw error;
-    }
-  }
-
-  async getPendingConfirmations(userId: number, groupId: number | null) {
-    return await this.db
-      .select({
-        id: pendingConfirmations.id,
-        debtId: pendingConfirmations.debtId,
-        actionType: pendingConfirmations.actionType,
-        requestedBy: pendingConfirmations.requestedBy,
-        lenderConfirmed: pendingConfirmations.lenderConfirmed,
-        borrowerConfirmed: pendingConfirmations.borrowerConfirmed,
-        createdAt: pendingConfirmations.createdAt,
-        expiresAt: pendingConfirmations.expiresAt,
-      })
-      .from(pendingConfirmations)
-      .leftJoin(debts, eq(pendingConfirmations.debtId, debts.id))
-      .where(
-        and(
-          groupId ? eq(debts.groupId, groupId) : sql`${debts.groupId} IS NULL`,
-          sql`${pendingConfirmations.expiresAt} > NOW()` // Only non-expired confirmations
-        )
-      )
-      .limit(10);
-  }
 
   private determineActionType(query: string): ActionType {
     const lowerQuery = query.toLowerCase().trim();
