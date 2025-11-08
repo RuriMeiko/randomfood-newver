@@ -14,6 +14,7 @@ import {
   payments
 } from './db/schema';
 import * as stickerMap from './stickers/sticker-map.json';
+import TelegramApi from './telegram/api';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export interface TelegramMessage {
@@ -115,8 +116,10 @@ export class AIBot {
       });
 
       // 4. Gửi messages với stickers
-      console.log('📤 [AIBot] Step 4: Sending messages with stickers...');
-      await this.sendMessagesWithStickers(message.chat.id, aiResponse.messages || [], aiResponse.intent || 'unknown');
+      console.log('📤 [AIBot] Step 4: Sending messages...');
+      const replyToMessageId = message.chat.type === 'supergroup' ? message.message_id : undefined;
+      const messageThreadId = message.message_thread_id || undefined;
+      await this.sendMessagesWithAIStickers(message.chat.id, aiResponse.messages || [], telegramToken, replyToMessageId, messageThreadId);
 
       // 5. Lưu conversation
       console.log('💾 [AIBot] Step 5: Saving conversation...');
@@ -326,6 +329,15 @@ ${confirmPrefs.length > 0 ?
         confirmPrefs.map(pref => `With User ID ${pref.targetUserId}: Debt Creation=${pref.requireDebtCreation}, Payment=${pref.requireDebtPayment}, Deletion=${pref.requireDebtDeletion}, Completion=${pref.requireDebtCompletion}`).join('\n') :
         'Mặc định yêu cầu xác nhận cho tất cả hành động.'
       }
+
+=== STICKER SYSTEM ===
+Available stickers by category:
+${Object.keys(stickerMap.emotions).map(emotion => `- ${emotion}: ${Object.keys(stickerMap.emotions[emotion]).length} stickers`).join('\n')}
+${Object.keys(stickerMap.situations).map(situation => `- ${situation}: ${Object.keys(stickerMap.situations[situation]).length} stickers`).join('\n')}
+- random: ${Object.keys(stickerMap.random).length} stickers
+
+You can add "sticker" field with sticker ID to any message.
+Use stickers sparingly for important moments only.
 
 === IMPORTANT: ALWAYS USE EXISTING DATABASE IDs ===
 - When creating SQL, ONLY use the Database IDs listed above
@@ -1176,101 +1188,22 @@ Original user message: "${userMessage}"
     }
   }
 
-  private telegramToken: string = process.env.TELEGRAM_BOT_TOKEN || '';
 
-  private shouldSendStickerForMessage(messageText: string, intent?: string): boolean {
-    // Send sticker for summary/final messages or important responses
-    if (messageText.includes('tổng cộng') || messageText.includes('sạch sẽ luônn')) return true;
-    if (messageText.includes('đúng hông') || messageText.includes('được chưa')) return true;
-    if (intent === 'sql' && messageText.includes('ghi lại')) return true;
+
+
+
+  private async sendMessagesWithAIStickers(
+    chatId: number, 
+    messages: { text: string; delay: string; sticker?: string }[], 
+    telegramToken: string,
+    replyToMessageId?: number,
+    messageThreadId?: number
+  ) {
+    const telegramApi = new TelegramApi(telegramToken);
     
-    return false;
-  }
-
-  private detectEmotion(messageText: string): string {
-    if (messageText.includes('🎉') || messageText.includes('vui') || messageText.includes('sạch sẽ')) return 'happy';
-    if (messageText.includes('💸') || messageText.includes('nợ')) return 'confused';
-    if (messageText.includes('lỗi') || messageText.includes('xin lỗi')) return 'sad';
-    if (messageText.includes('đúng hông') || messageText.includes('được chưa')) return 'confused';
-    
-    return 'happy'; // default
-  }
-
-  private async sendSticker(chatId: number, stickerId: string) {
-    try {
-      const url = `https://api.telegram.org/bot${this.telegramToken}/sendSticker`;
-      const payload = {
-        chat_id: chatId,
-        sticker: stickerId,
-      };
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to send sticker:', await response.text());
-      } else {
-        console.log(`🎭 Sticker sent successfully: ${stickerId}`);
-      }
-    } catch (error) {
-      console.error('Error sending sticker:', error);
-    }
-  }
-
-  private async sendMessage(chatId: number, text: string) {
-    try {
-      const url = `https://api.telegram.org/bot${this.telegramToken}/sendMessage`;
-      const payload = {
-        chat_id: chatId,
-        text: text,
-        parse_mode: 'HTML'
-      };
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to send message:', await response.text());
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-    }
-  }
-
-  private async sendTypingAction(chatId: number) {
-    try {
-      const url = `https://api.telegram.org/bot${this.telegramToken}/sendChatAction`;
-      const payload = {
-        chat_id: chatId,
-        action: 'typing'
-      };
-      
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      
-      if (!response.ok) {
-        console.error('Failed to send typing action:', await response.text());
-      }
-    } catch (error) {
-      console.error('Error sending typing action:', error);
-    }
-  }
-
-  private async sendMessagesWithStickers(chatId: number, messages: { text: string; delay: string }[], intent: string) {
-    for (let i = 0; i < messages.length; i++) {
-      const msg = messages[i];
-      
+    for (const msg of messages) {
       // Gửi typing action trước
-      await this.sendTypingAction(chatId);
+      await telegramApi.sendChatAction(chatId, 'typing');
       console.log('💬 Sending typing action...');
       
       // Delay trước khi gửi
@@ -1278,39 +1211,33 @@ Original user message: "${userMessage}"
       console.log(`⏱️ Waiting ${delay}ms before sending: "${msg.text}"`);
       await new Promise(resolve => setTimeout(resolve, delay));
       
-      // Gửi message
-      await this.sendMessage(chatId, msg.text);
+      // Gửi message với proper params object
+      const messageParams: any = {
+        chat_id: chatId,
+        text: msg.text
+      };
+      
+      // Thêm reply_to_message_id nếu có (cho supergroup)
+      if (replyToMessageId) {
+        messageParams.reply_to_message_id = replyToMessageId;
+      }
+      
+      // Thêm message_thread_id nếu có (cho forum/topics)
+      if (messageThreadId) {
+        messageParams.message_thread_id = messageThreadId;
+      }
+      
+      await telegramApi.sendMessage(messageParams);
       console.log(`📤 Sending message: ${msg.text}`);
       
-      // Gửi sticker nếu là message cuối hoặc message quan trọng
-      if (i === messages.length - 1 || this.shouldSendStickerForMessage(msg.text, intent)) {
-        const stickerId = this.getStickerForSituation(this.mapIntentToSituation(intent), this.detectEmotion(msg.text));
-        if (stickerId && Math.random() < 0.7) { // 70% chance to send sticker
-          console.log(`🎭 Sending sticker for situation: ${intent}`);
-          await new Promise(resolve => setTimeout(resolve, 500)); // Small delay before sticker
-          await this.sendSticker(chatId, stickerId);
-        }
+      // Gửi sticker nếu AI quyết định
+      if (msg.sticker) {
+        console.log(`🎭 AI decided to send sticker: ${msg.sticker}`);
+        await new Promise(resolve => setTimeout(resolve, 500)); // Small delay before sticker
+        await telegramApi.sendSticker(chatId, msg.sticker, messageThreadId);
       }
     }
   }
-
-  private mapIntentToSituation(intent: string): string {
-    switch (intent) {
-      case 'sql':
-        return 'debt_check'; // For SQL queries like debt checking
-      case 'debt_created':
-        return 'debt_created';
-      case 'debt_paid':
-        return 'debt_paid';
-      case 'food':
-        return 'food_suggestion';
-      case 'error':
-        return 'error';
-      default:
-        return 'random';
-    }
-  }
-
 
   private async logAction(actionData: {
     userId?: number;
