@@ -7,6 +7,7 @@ import { DatabaseService } from './services/database';
 import { ContextBuilderService } from './services/context-builder';
 import { AIAnalyzerService } from './services/ai-analyzer';
 import { StickerService } from './services/sticker-service';
+import TelegramApi from './telegram/api.js';
 import type { TelegramMessage } from './types/telegram';
 import type { ProcessMessageResult, AIResponse } from './types/ai-bot';
 
@@ -69,17 +70,25 @@ export class AIBot {
     try {
       console.log('🤖 [AIBot] Processing message with messages and stickers:', message.text);
 
-      // 1. Ensure user and group exist in database
-      console.log('📝 [AIBot] Step 1: Ensuring user and group exist...');
+      // 1. Show initial typing indicator
+      console.log('⌨️ [AIBot] Step 1: Showing typing indicator...');
+      const telegramApi = new TelegramApi(telegramToken);
+      await telegramApi.sendChatAction(
+        message.chat.id, 
+        'typing'
+      );
+
+      // 2. Ensure user and group exist in database
+      console.log('📝 [AIBot] Step 2: Ensuring user and group exist...');
       await this._dbService.ensureUserAndGroup(message);
 
-      // 2. Build context for AI from database
-      console.log('🧠 [AIBot] Step 2: Building context from database...');
+      // 3. Build context for AI from database
+      console.log('🧠 [AIBot] Step 3: Building context from database...');
       const context = await this._contextBuilder.buildContext(message);
       console.log('📄 [AIBot] Context built, length:', context.length);
 
-      // 3. Analyze intent and generate SQL if needed
-      console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
+      // 4. Analyze intent and generate SQL if needed
+      console.log('🎯 [AIBot] Step 4: Analyzing intent with AI...');
       const aiResponse = await this._aiAnalyzer.analyzeAndExecuteWithMessages(message.text || "", context, message);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
@@ -87,8 +96,8 @@ export class AIBot {
         messagesCount: aiResponse.messages?.length || 0
       });
 
-      // 4. Send messages with stickers
-      console.log('📤 [AIBot] Step 4: Sending messages...');
+      // 5. Send messages with stickers
+      console.log('📤 [AIBot] Step 5: Sending messages...');
       const replyToMessageId = message.chat.type === 'supergroup' ? message.message_id : undefined;
       const messageThreadId = message.message_thread_id || undefined;
       await this._stickerService.sendMessagesWithAIStickers(
@@ -99,8 +108,8 @@ export class AIBot {
         messageThreadId
       );
 
-      // 5. Save conversation
-      console.log('💾 [AIBot] Step 5: Saving conversation...');
+      // 6. Save conversation
+      console.log('💾 [AIBot] Step 6: Saving conversation...');
       await this._dbService.saveConversation(message, aiResponse);
 
       console.log('✅ [AIBot] Message processed successfully');

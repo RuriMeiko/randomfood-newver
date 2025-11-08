@@ -60,6 +60,10 @@ export class StickerService {
         const delay = parseInt(message.delay) || 1000;
         
         if (index > 0) {
+          // Show typing indicator during delay
+          await telegramApi.sendChatAction(chatId, 'typing');
+          
+          // Wait for the specified delay
           await new Promise(resolve => setTimeout(resolve, delay));
         }
 
@@ -69,8 +73,6 @@ export class StickerService {
           if (stickerId) {
             await telegramApi.sendSticker(chatId, stickerId, messageThreadId);
             
-            // Small delay after sticker before text
-            // await new Promise(resolve => setTimeout(resolve, 500));
           }
         }
 
