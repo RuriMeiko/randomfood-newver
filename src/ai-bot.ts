@@ -13,6 +13,7 @@ import {
   confirmationPreferences,
   payments
 } from './db/schema';
+import * as stickerMap from './stickers/sticker-map.json';
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export interface TelegramMessage {
@@ -82,6 +83,59 @@ export class AIBot {
     } catch (error) {
       console.error('❌ [AIBot] Error processing message:', error);
       return 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.';
+    }
+  }
+
+  async processMessageWithMessagesAndStickers(message: TelegramMessage, telegramToken: string): Promise<{
+    messages: { text: string; delay: string }[];
+    intent: string;
+    hasSQL: boolean;
+  }> {
+    this.telegramToken = telegramToken;
+    
+    try {
+      console.log('🤖 [AIBot] Processing message with messages and stickers:', message.text);
+
+      // 1. Đảm bảo user và group tồn tại trong database
+      console.log('📝 [AIBot] Step 1: Ensuring user and group exist...');
+      await this.ensureUserAndGroup(message);
+
+      // 2. Tạo context cho AI từ database
+      console.log('🧠 [AIBot] Step 2: Building context from database...');
+      const context = await this.buildContext(message);
+      console.log('📄 [AIBot] Context built, length:', context.length);
+
+      // 3. Phân tích intent và generate SQL nếu cần
+      console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
+      const aiResponse = await this.analyzeAndExecuteWithMessages(message.text, context, message);
+      console.log('🔍 [AIBot] AI Analysis result:', {
+        intent: aiResponse.intent,
+        hasSQL: !!aiResponse.sqlQuery,
+        messagesCount: aiResponse.messages?.length || 0
+      });
+
+      // 4. Gửi messages với stickers
+      console.log('📤 [AIBot] Step 4: Sending messages with stickers...');
+      await this.sendMessagesWithStickers(message.chat.id, aiResponse.messages || [], aiResponse.intent || 'unknown');
+
+      // 5. Lưu conversation
+      console.log('💾 [AIBot] Step 5: Saving conversation...');
+      await this.saveConversation(message, aiResponse);
+
+      console.log('✅ [AIBot] Message processed successfully');
+      return {
+        messages: aiResponse.messages || [{ text: 'ơ e bị lỗi rùii', delay: '1000' }],
+        intent: aiResponse.intent || 'error',
+        hasSQL: !!aiResponse.sqlQuery
+      };
+
+    } catch (error) {
+      console.error('❌ [AIBot] Error processing message:', error);
+      return {
+        messages: [{ text: 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại.', delay: '1000' }],
+        intent: 'error',
+        hasSQL: false
+      };
     }
   }
 
@@ -460,7 +514,7 @@ food_suggestions(id,user_id,group_id,food_id,query,ai_response,suggested_at)
 }
 \`\`\`
 
-Example debt action:
+Example debt creation:
 
 \`\`\`json
 {
@@ -472,8 +526,24 @@ Example debt action:
     {"text":"ơ để e ghi lại nèee","delay":"800"},
     {"text":"anh nợ Ngọc Long 503k đúng hôngg","delay":"1200"}
   ],
-  "next_action":"continue",
+  "next_action":"stop",
   "reason":"User requested to record debt for Long 503k VND"
+}
+\`\`\`
+
+Example debt query (with continue):
+
+\`\`\`json
+{
+  "type":"sql",
+  "sql":[
+    {"query":"SELECT d.id, d.amount, d.currency, d.note, L.display_name AS lender_name, B.display_name AS borrower_name FROM debts d JOIN tg_users L ON d.lender_id = L.id JOIN tg_users B ON d.borrower_id = B.id WHERE d.group_id = $1 AND d.settled = FALSE AND (d.borrower_id = $2 OR d.lender_id = $2)","params":["1","1"]}
+  ],
+  "messages":[
+    {"text":"dạaaa, để e kiểm tra sổ nợ cho anh nèee 📝","delay":"850"}
+  ],
+  "next_action":"continue",
+  "reason":"User requested debt summary - need to process SQL results"
 }
 \`\`\`
 
@@ -566,12 +636,22 @@ ${context}
           sqlResults.push(result);
         }
         
-        // Nếu là SELECT query và có kết quả, tạo thêm messages với thông tin chi tiết
-        if (parsed.sql[0].query.toLowerCase().trim().startsWith('select') && sqlResults[0] && sqlResults[0].length > 0) {
-          const additionalMessages = await this.generateMessagesFromQueryResult(sqlResults[0], userMessage);
-          if (additionalMessages.length > 0) {
-            parsed.messages = [...(parsed.messages || []), ...additionalMessages];
-          }
+        // Nếu next_action là "continue", gửi SQL result về cho AI để xử lý tiếp
+        if (parsed.next_action === "continue" && sqlResults.length > 0) {
+          console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
+          const sqlResultContext = `
+SQL EXECUTION RESULTS:
+Query: ${parsed.sql[0].query}
+Params: ${JSON.stringify(parsed.sql[0].params)}
+Results: ${JSON.stringify(sqlResults[0], null, 2)}
+
+Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
+Original user message: "${userMessage}"
+`;
+          
+          const continueResponse = await this.analyzeAndExecuteWithMessages(sqlResultContext, context, message);
+          // Merge messages từ cả 2 responses
+          parsed.messages = [...(parsed.messages || []), ...(continueResponse.messages || [])];
         }
       }
 
@@ -867,12 +947,31 @@ ${context}
           sqlResults.push(result);
         }
         
-        // Nếu là SELECT query và có kết quả, tạo thêm messages với thông tin chi tiết
-        if (parsed.sql[0].query.toLowerCase().trim().startsWith('select') && sqlResults[0] && sqlResults[0].length > 0) {
-          const additionalMessages = await this.generateMessagesFromQueryResult(sqlResults[0], userMessage);
-          if (additionalMessages.length > 0) {
-            parsed.messages = [...(parsed.messages || []), ...additionalMessages];
-          }
+        // Nếu next_action là "continue", gửi SQL result về cho AI để xử lý tiếp
+        if (parsed.next_action === "continue" && sqlResults.length > 0) {
+          console.log('🔄 [AI] Continue action detected, sending SQL results back to AI...');
+          const sqlResultContext = `
+SQL EXECUTION RESULTS:
+Query: ${parsed.sql[0].query}
+Params: ${JSON.stringify(parsed.sql[0].params)}
+Results: ${JSON.stringify(sqlResults[0], null, 2)}
+
+Based on these SQL results, please generate appropriate Vietnamese messages to respond to user.
+Original user message: "${userMessage}"
+`;
+          
+          const continueResponse = await this.analyzeAndExecute(sqlResultContext, context, message);
+          // Merge response text
+          const currentResponse = parsed.messages && parsed.messages.length > 0 ? 
+            parsed.messages.map(msg => msg.text).join(' ') : '';
+          const additionalResponse = continueResponse.response || '';
+          
+          return {
+            response: currentResponse + ' ' + additionalResponse,
+            intent: parsed.type,
+            sqlQuery: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].query : undefined,
+            sqlParams: parsed.sql && parsed.sql.length > 0 ? parsed.sql[0].params : undefined,
+          };
         }
       }
 
@@ -1006,55 +1105,177 @@ ${context}
     return 'sql_executed';
   }
 
-  private async generateMessagesFromQueryResult(queryResult: any[], userMessage: string): Promise<{ text: string; delay: string }[]> {
-    const messages: { text: string; delay: string }[] = [];
-
-    // Check if this is a debt query result
-    if (queryResult[0] && ('lender_name' in queryResult[0] || 'borrower_name' in queryResult[0])) {
-      let totalOwed = 0;
-      let totalLent = 0;
+  private getStickerForSituation(situation: string, emotion?: string): string | null {
+    try {
+      const stickers = stickerMap as any;
       
-      for (const debt of queryResult) {
-        const amount = parseFloat(debt.amount) || 0;
-        
-        if (debt.borrower_name && debt.lender_name) {
-          // Format amount nicely
-          const formattedAmount = new Intl.NumberFormat('vi-VN').format(amount);
-          
-          if (userMessage.includes('check') || userMessage.includes('kiểm tra') || userMessage.includes('xem')) {
-            // Debt summary format
-            if (debt.lender_name !== debt.borrower_name) {
-              if (amount > 0) {
-                messages.push({
-                  text: `ơ anh nợ ${debt.lender_name} ${formattedAmount} ${debt.currency} nè`,
-                  delay: (1200 + messages.length * 300).toString()
-                });
-                totalOwed += amount;
-              }
-            }
-          }
+      // Try to get situation-specific sticker first
+      if (situation && stickers.situations[situation]) {
+        const situationStickers = Object.keys(stickers.situations[situation]);
+        if (situationStickers.length > 0) {
+          const randomIndex = Math.floor(Math.random() * situationStickers.length);
+          return situationStickers[randomIndex];
         }
       }
       
-      // Add summary message if there are debts
-      if (totalOwed > 0) {
-        const formattedTotal = new Intl.NumberFormat('vi-VN').format(totalOwed);
-        messages.push({
-          text: `tổng cộng anh nợ ${formattedTotal} VND đóoo 💸`,
-          delay: (1500 + messages.length * 300).toString()
-        });
-      } else if (queryResult.length === 0) {
-        messages.push({
-          text: `ơ anh không nợ ai cả nè, sạch sẽ luônn 🎉`,
-          delay: "1200"
-        });
+      // Try emotion-based sticker
+      if (emotion && stickers.emotions[emotion]) {
+        const emotionStickers = Object.keys(stickers.emotions[emotion]);
+        if (emotionStickers.length > 0) {
+          const randomIndex = Math.floor(Math.random() * emotionStickers.length);
+          return emotionStickers[randomIndex];
+        }
+      }
+      
+      // Fallback to random sticker
+      const randomStickers = Object.keys(stickers.random);
+      if (randomStickers.length > 0) {
+        const randomIndex = Math.floor(Math.random() * randomStickers.length);
+        return randomStickers[randomIndex];
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Error getting sticker:', error);
+      return null;
+    }
+  }
+
+  private telegramToken: string = process.env.TELEGRAM_BOT_TOKEN || '';
+
+  private shouldSendStickerForMessage(messageText: string, intent?: string): boolean {
+    // Send sticker for summary/final messages or important responses
+    if (messageText.includes('tổng cộng') || messageText.includes('sạch sẽ luônn')) return true;
+    if (messageText.includes('đúng hông') || messageText.includes('được chưa')) return true;
+    if (intent === 'sql' && messageText.includes('ghi lại')) return true;
+    
+    return false;
+  }
+
+  private detectEmotion(messageText: string): string {
+    if (messageText.includes('🎉') || messageText.includes('vui') || messageText.includes('sạch sẽ')) return 'happy';
+    if (messageText.includes('💸') || messageText.includes('nợ')) return 'confused';
+    if (messageText.includes('lỗi') || messageText.includes('xin lỗi')) return 'sad';
+    if (messageText.includes('đúng hông') || messageText.includes('được chưa')) return 'confused';
+    
+    return 'happy'; // default
+  }
+
+  private async sendSticker(chatId: number, stickerId: string) {
+    try {
+      const url = `https://api.telegram.org/bot${this.telegramToken}/sendSticker`;
+      const payload = {
+        chat_id: chatId,
+        sticker: stickerId,
+      };
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to send sticker:', await response.text());
+      } else {
+        console.log(`🎭 Sticker sent successfully: ${stickerId}`);
+      }
+    } catch (error) {
+      console.error('Error sending sticker:', error);
+    }
+  }
+
+  private async sendMessage(chatId: number, text: string) {
+    try {
+      const url = `https://api.telegram.org/bot${this.telegramToken}/sendMessage`;
+      const payload = {
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML'
+      };
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to send message:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error sending message:', error);
+    }
+  }
+
+  private async sendTypingAction(chatId: number) {
+    try {
+      const url = `https://api.telegram.org/bot${this.telegramToken}/sendChatAction`;
+      const payload = {
+        chat_id: chatId,
+        action: 'typing'
+      };
+      
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      
+      if (!response.ok) {
+        console.error('Failed to send typing action:', await response.text());
+      }
+    } catch (error) {
+      console.error('Error sending typing action:', error);
+    }
+  }
+
+  private async sendMessagesWithStickers(chatId: number, messages: { text: string; delay: string }[], intent: string) {
+    for (let i = 0; i < messages.length; i++) {
+      const msg = messages[i];
+      
+      // Gửi typing action trước
+      await this.sendTypingAction(chatId);
+      console.log('💬 Sending typing action...');
+      
+      // Delay trước khi gửi
+      const delay = parseInt(msg.delay) || 1000;
+      console.log(`⏱️ Waiting ${delay}ms before sending: "${msg.text}"`);
+      await new Promise(resolve => setTimeout(resolve, delay));
+      
+      // Gửi message
+      await this.sendMessage(chatId, msg.text);
+      console.log(`📤 Sending message: ${msg.text}`);
+      
+      // Gửi sticker nếu là message cuối hoặc message quan trọng
+      if (i === messages.length - 1 || this.shouldSendStickerForMessage(msg.text, intent)) {
+        const stickerId = this.getStickerForSituation(this.mapIntentToSituation(intent), this.detectEmotion(msg.text));
+        if (stickerId && Math.random() < 0.7) { // 70% chance to send sticker
+          console.log(`🎭 Sending sticker for situation: ${intent}`);
+          await new Promise(resolve => setTimeout(resolve, 500)); // Small delay before sticker
+          await this.sendSticker(chatId, stickerId);
+        }
       }
     }
-
-    // Handle other types of query results here if needed
-    
-    return messages;
   }
+
+  private mapIntentToSituation(intent: string): string {
+    switch (intent) {
+      case 'sql':
+        return 'debt_check'; // For SQL queries like debt checking
+      case 'debt_created':
+        return 'debt_created';
+      case 'debt_paid':
+        return 'debt_paid';
+      case 'food':
+        return 'food_suggestion';
+      case 'error':
+        return 'error';
+      default:
+        return 'random';
+    }
+  }
+
 
   private async logAction(actionData: {
     userId?: number;
