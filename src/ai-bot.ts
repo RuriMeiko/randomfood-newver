@@ -13,8 +13,8 @@ import {
   confirmationPreferences,
   payments
 } from './db/schema';
-import * as stickerMap from './stickers/sticker-map.json';
-import TelegramApi from './telegram/api';
+import TelegramApi from '@/telegram/api';
+const stickerMap = require('@/stickers/sticker-map.json');
 import { eq, and, desc, sql } from 'drizzle-orm';
 
 export interface TelegramMessage {
@@ -219,7 +219,6 @@ export class AIBot {
     intent: string;
     hasSQL: boolean;
   }> {
-    this.telegramToken = telegramToken;
 
     try {
       console.log('🤖 [AIBot] Processing message with messages and stickers:', message.text);
@@ -341,10 +340,11 @@ export class AIBot {
         .limit(1);
 
       if (existingGroup.length === 0) {
+        const chatType = message.chat.type === 'channel' ? 'group' : message.chat.type as 'private' | 'group' | 'supergroup';
         await this.db.insert(tgGroups).values({
           tgChatId: message.chat.id,
           title: message.chat.title || 'Unknown Group',
-          type: message.chat.type,
+          type: chatType,
         });
       }
     }
@@ -502,9 +502,6 @@ Use stickers sparingly for important moments only.
     const config = {
       thinkingConfig: {
         thinkingBudget: 0,
-      },
-      imageConfig: {
-        imageSize: '1K',
       },
       responseMimeType: 'application/json',
       responseSchema: {
@@ -845,9 +842,6 @@ Original user message: "${userMessage}"
     const config = {
       thinkingConfig: {
         thinkingBudget: 0,
-      },
-      imageConfig: {
-        imageSize: '1K',
       },
       responseMimeType: 'application/json',
       responseSchema: {
