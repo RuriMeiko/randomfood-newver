@@ -29,7 +29,8 @@ export class ContextBuilderService {
       this.dbService.getNameAliases(userId),
       this.dbService.getConfirmationPreferences(userId)
     ]);
-
+    console.log(recentMessages);
+    
     // Build context string with complete user mapping
     const context = `
 === NGỮ CẢNH HIỆN TẠI ===
