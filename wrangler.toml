@@ -11,7 +11,7 @@ logpush = false
 command = "npm run build"
 
 [triggers]
-crons = ["* * * * *"]
+# crons = ["* * * * *"]
 
 [vars]
 

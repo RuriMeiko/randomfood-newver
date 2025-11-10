@@ -65,7 +65,7 @@ export class AIAnalyzerService {
     }
   }
 
-  async analyzeAndExecuteWithMessages(userMessage: string, context: string, message?: TelegramMessage): Promise<AIResponse> {
+  async analyzeAndExecuteWithMessages(userMessage: string, context: string, message?: TelegramMessage, ctx?: ExecutionContext): Promise<AIResponse> {
     const config = this.getAIConfig();
     const prompt = this.buildPrompt(userMessage, context);
 

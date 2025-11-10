@@ -66,51 +66,68 @@ export class AIBot {
   /**
    * Process a message and return structured messages with support for stickers
    */
-  async processMessageWithMessagesAndStickers(message: TelegramMessage, telegramToken: string): Promise<ProcessMessageResult> {
+  async processMessageWithMessagesAndStickers(message: TelegramMessage, telegramToken: string, ctx?: ExecutionContext): Promise<ProcessMessageResult> {
     try {
       console.log('🤖 [AIBot] Processing message with messages and stickers:', message.text);
 
-      // 1. Show initial typing indicator
-      console.log('⌨️ [AIBot] Step 1: Showing typing indicator...');
       const telegramApi = new TelegramApi(telegramToken);
-      await telegramApi.sendChatAction(
-        message.chat.id, 
-        'typing'
-      );
+      
+      // 1. Start parallel operations immediately
+      console.log('⌨️ [AIBot] Step 1: Starting parallel operations...');
+      
+      // Non-blocking: Show typing indicator
+      const typingPromise = telegramApi.sendChatAction(message.chat.id, 'typing');
+      
+      // Non-blocking: Ensure user and group exist in database
+      const ensureUserPromise = this._dbService.ensureUserAndGroup(message);
+      
+      // Run typing and user setup in parallel
+      await Promise.all([typingPromise, ensureUserPromise]);
 
-      // 2. Ensure user and group exist in database
-      console.log('📝 [AIBot] Step 2: Ensuring user and group exist...');
-      await this._dbService.ensureUserAndGroup(message);
-
-      // 3. Build context for AI from database
-      console.log('🧠 [AIBot] Step 3: Building context from database...');
+      // 2. Build context for AI from database
+      console.log('🧠 [AIBot] Step 2: Building context from database...');
       const context = await this._contextBuilder.buildContext(message);
       console.log('📄 [AIBot] Context built, length:', context.length);
 
-      // 4. Analyze intent and generate SQL if needed
-      console.log('🎯 [AIBot] Step 4: Analyzing intent with AI...');
-      const aiResponse = await this._aiAnalyzer.analyzeAndExecuteWithMessages(message.text || "", context, message);
+      // 3. Analyze intent and generate SQL if needed
+      console.log('🎯 [AIBot] Step 3: Analyzing intent with AI...');
+      const aiResponse = await this._aiAnalyzer.analyzeAndExecuteWithMessages(message.text || "", context, message, ctx);
       console.log('🔍 [AIBot] AI Analysis result:', {
         intent: aiResponse.intent,
         hasSQL: !!aiResponse.sqlQuery,
         messagesCount: aiResponse.messages?.length || 0
       });
 
-      // 5. Send messages with stickers
-      console.log('📤 [AIBot] Step 5: Sending messages...');
+      // 4. Send messages with stickers and save conversation in parallel
+      console.log('📤 [AIBot] Step 4: Sending messages and saving conversation...');
       const replyToMessageId = message.chat.type === 'supergroup' ? message.message_id : undefined;
       const messageThreadId = message.message_thread_id || undefined;
-      await this._stickerService.sendMessagesWithAIStickers(
+      
+      const sendMessagesPromise = this._stickerService.sendMessagesWithAIStickers(
         message.chat.id, 
         aiResponse.messages || [], 
         telegramToken, 
         replyToMessageId, 
-        messageThreadId
+        messageThreadId,
+        ctx
       );
 
-      // 6. Save conversation
-      console.log('💾 [AIBot] Step 6: Saving conversation...');
-      await this._dbService.saveConversation(message, aiResponse);
+      // Start sending messages immediately (non-blocking for response)
+      // But save conversation in background using waitUntil if available
+      if (ctx) {
+        ctx.waitUntil(
+          Promise.all([
+            sendMessagesPromise,
+            this._dbService.saveConversation(message, aiResponse)
+          ])
+        );
+      } else {
+        // Fallback: run in parallel but wait for completion
+        await Promise.all([
+          sendMessagesPromise,
+          this._dbService.saveConversation(message, aiResponse)
+        ]);
+      }
 
       console.log('✅ [AIBot] Message processed successfully');
       return {
