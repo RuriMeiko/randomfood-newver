@@ -87,6 +87,29 @@ export default class TelegramApi {
   }
 
   /**
+   * Make multiple API requests in parallel (non-blocking)
+   * @param requests - Array of requests to make
+   * @param ctx - ExecutionContext for waitUntil
+   */
+  async makeParallelRequests(requests: Array<{method: string, params: TelegramApiParams}>, ctx?: ExecutionContext): Promise<any[]> {
+    if (ctx && requests.length > 1) {
+      // Send first request immediately, queue others with waitUntil
+      const firstResult = await this.makeRequest(requests[0].method, requests[0].params);
+      
+      if (requests.length > 1) {
+        ctx.waitUntil(
+          Promise.all(requests.slice(1).map(req => this.makeRequest(req.method, req.params)))
+        );
+      }
+      
+      return [firstResult];
+    } else {
+      // Fallback: all requests in parallel
+      return Promise.all(requests.map(req => this.makeRequest(req.method, req.params)));
+    }
+  }
+
+  /**
    * Create API request with proper parameters
    * @param method - API method name
    * @param params - Parameters for the API call

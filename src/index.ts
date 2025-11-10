@@ -49,10 +49,10 @@ export default {
           return new Response('OK', { status: 200 });
         }
 
-        // Xử lý message bằng AI bot với stickers
-        await aiBot.processMessageWithMessagesAndStickers(message, env.API_TELEGRAM);
+        // Xử lý message bằng AI bot với stickers bằng waitUntil (non-blocking)
+        ctx.waitUntil(aiBot.processMessageWithMessagesAndStickers(message, env.API_TELEGRAM, ctx));
 
-        console.log('✅ Message processed successfully');
+        console.log('✅ Message processing started (non-blocking)');
         return new Response('OK', { status: 200 });
       } catch (error) {
         console.error('❌ Webhook error:', error);
