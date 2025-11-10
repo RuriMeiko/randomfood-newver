@@ -97,7 +97,7 @@ export class DatabaseService {
       .limit(50);
   }
 
-  async getRecentMessages(userId: number, groupId: number | null) {
+  async getRecentMessages(chatId: number) {
     return await this.db
       .select({
         sender: chatMessages.sender,
@@ -105,15 +105,51 @@ export class DatabaseService {
         createdAt: chatMessages.createdAt,
       })
       .from(chatMessages)
-      .leftJoin(chatSessions, eq(chatMessages.sessionId, chatSessions.id))
-      .where(
-        and(
-          eq(chatSessions.userId, userId),
-          groupId ? eq(chatSessions.groupId, groupId) : sql`${chatSessions.groupId} IS NULL`
-        )
-      )
+      .where(eq(chatMessages.chatId, chatId))
       .orderBy(desc(chatMessages.createdAt))
       .limit(10);
+  }
+
+
+  /**
+   * Get recent messages from a specific chat ID (all users + AI messages)
+   * @param chatId - Telegram chat ID 
+   * @returns 10 most recent messages with sender info
+   */
+  async getRecentMessagesByChatId(chatId: number) {
+    try {
+      console.log(`🔍 Getting recent messages for chatId: ${chatId}`);
+
+      const messages = await this.db
+        .select({
+          sender: chatMessages.sender,
+          senderTgId: chatMessages.senderTgId,
+          messageText: chatMessages.messageText,
+          createdAt: chatMessages.createdAt,
+          senderDisplayName: tgUsers.displayName,
+          senderUsername: tgUsers.tgUsername,
+        })
+        .from(chatMessages)
+        .leftJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
+        .where(eq(chatMessages.chatId, chatId))
+        .orderBy(desc(chatMessages.createdAt))
+        .limit(10);
+
+      console.log(`📝 Found ${messages.length} recent messages for chat ${chatId}`);
+      
+      // Format messages for better readability
+      return messages.map(msg => ({
+        sender: msg.sender,
+        senderName: msg.sender === 'ai' ? 'Mây (AI)' : (msg.senderDisplayName || msg.senderUsername || `User ${msg.senderTgId}`),
+        messageText: msg.messageText,
+        createdAt: msg.createdAt,
+        isAI: msg.sender === 'ai'
+      }));
+
+    } catch (error) {
+      console.error('❌ Error getting recent messages by chat ID:', error);
+      return [];
+    }
   }
 
   async getCurrentDebts(groupId: number | null) {
@@ -252,41 +288,11 @@ export class DatabaseService {
 
   async saveConversation(message: TelegramMessage, aiResponse: any) {
     try {
-      const userId = await this.getUserId(message.from?.id || 0);
-      const groupId = message.chat.type === 'private' ? null : await this.getGroupId(message.chat.id);
+      const chatId = message.chat.id;
 
-      // Find or create active session
-      let session = await this.db
-        .select()
-        .from(chatSessions)
-        .where(
-          and(
-            eq(chatSessions.userId, userId),
-            groupId ? eq(chatSessions.groupId, groupId) : sql`${chatSessions.groupId} IS NULL`,
-            eq(chatSessions.active, true)
-          )
-        )
-        .limit(1);
-
-      let sessionId: number;
-      if (session.length === 0) {
-        const newSession = await this.db.insert(chatSessions).values({
-          userId,
-          groupId,
-          active: true,
-        }).returning({ id: chatSessions.id });
-        sessionId = newSession[0].id;
-      } else {
-        sessionId = session[0].id;
-        await this.db
-          .update(chatSessions)
-          .set({ lastActivity: new Date() })
-          .where(eq(chatSessions.id, sessionId));
-      }
-
-      // Save message
+      // Save user message
       await this.db.insert(chatMessages).values({
-        sessionId,
+        chatId,
         sender: 'user',
         senderTgId: message.from?.id || 0,
         messageText: message.text || '',
@@ -294,6 +300,23 @@ export class DatabaseService {
         sqlQuery: aiResponse?.sqlQuery || null,
         sqlParams: aiResponse?.sqlParams ? JSON.stringify(aiResponse.sqlParams) : null,
       } as any);
+
+      // Save AI response messages
+      if (aiResponse?.messages && Array.isArray(aiResponse.messages)) {
+        for (const aiMsg of aiResponse.messages) {
+          await this.db.insert(chatMessages).values({
+            chatId,
+            sender: 'ai',
+            senderTgId: null, // AI doesn't have a Telegram ID
+            messageText: aiMsg.text || '',
+            delayMs: parseInt(aiMsg.delay) || null,
+            intent: aiResponse.intent || 'unknown',
+            sqlQuery: aiResponse?.sqlQuery || null,
+            sqlParams: aiResponse?.sqlParams ? JSON.stringify(aiResponse.sqlParams) : null,
+          } as any);
+        }
+        console.log(`💾 Saved user message + ${aiResponse.messages.length} AI messages to chat history`);
+      }
 
     } catch (error) {
       console.error('❌ Failed to save conversation:', error);

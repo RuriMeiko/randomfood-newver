@@ -24,7 +24,7 @@ export class ContextBuilderService {
       confirmPrefs
     ] = await Promise.all([
       this.dbService.getAllUsers(),
-      this.dbService.getRecentMessages(userId, groupId),
+      this.dbService.getRecentMessagesByChatId(message.chat.id),
       this.dbService.getCurrentDebts(groupId),
       this.dbService.getNameAliases(userId),
       this.dbService.getConfirmationPreferences(userId)
@@ -41,8 +41,11 @@ Group ID: ${groupId}
 === TẤT CẢ USERS TRONG DATABASE ===
 ${allUsers.map(user => `DB ID: ${user.id} | Telegram ID: ${user.tgId} | Name: ${user.displayName || 'Unknown'} | Username: @${user.tgUsername || 'none'}`).join('\n')}
 
-=== LỊCH SỬ CHAT GẦN ĐÂY ===
-${recentMessages.map(msg => `${msg.sender}: ${msg.messageText}`).join('\n')}
+=== LỊCH SỬ CHAT GẦN ĐÂY (10 tin nhắn mới nhất) ===
+${recentMessages.length > 0 ? 
+  recentMessages.map(msg => `${msg.senderName}: ${msg.messageText}`).join('\n') : 
+  'Chưa có tin nhắn nào trong cuộc trò chuyện này.'
+}
 
 === NỢ HIỆN TẠI ===
 ${currentDebts.length > 0 ?

@@ -70,7 +70,7 @@ export const chatSessions = pgTable('chat_sessions', {
 // Chat Messages
 export const chatMessages = pgTable('chat_messages', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  sessionId: bigint('session_id', { mode: 'number' }).references(() => chatSessions.id, { onDelete: 'cascade' }),
+  chatId: bigint('chat_id', { mode: 'number' }).notNull(), // Telegram chat ID directly
   sender: text('sender').$type<'user' | 'ai'>().notNull(),
   senderTgId: bigint('sender_tg_id', { mode: 'number' }),
   messageText: text('message_text').notNull(),
