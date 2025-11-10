@@ -11,7 +11,6 @@ import {
   tgGroups,
   debts,
   nameAliases,
-  chatSessions,
   chatMessages,
   actionLogs,
   pendingConfirmations,

@@ -367,8 +367,7 @@ Correct pending_confirmations example: INSERT INTO pending_confirmations (debt_i
 **context / alias**
 
 \`\`\`
-chat_sessions(id,group_id,user_id,started_at,last_activity,context_hash,active)
-chat_messages(id,session_id,sender,sender_tg_id,message_text,delay_ms,intent,sql_query,sql_params,created_at)
+chat_messages(id,chat_id,sender,sender_tg_id,message_text,delay_ms,intent,sql_query,sql_params,created_at)
 name_aliases(id,owner_user_id,alias_text,ref_user_id,confidence,last_used)
 \`\`\`
 

@@ -56,16 +56,6 @@ export const payments = pgTable('payments', {
   note: text('note'),
 });
 
-// Chat Sessions
-export const chatSessions = pgTable('chat_sessions', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  groupId: bigint('group_id', { mode: 'number' }).references(() => tgGroups.id, { onDelete: 'set null' }),
-  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'set null' }),
-  startedAt: timestamp('started_at').defaultNow(),
-  lastActivity: timestamp('last_activity').defaultNow(),
-  contextHash: text('context_hash'),
-  active: boolean('active').default(true),
-});
 
 // Chat Messages
 export const chatMessages = pgTable('chat_messages', {
@@ -167,7 +157,6 @@ export const tgUsersRelations = relations(tgUsers, ({ many }) => ({
 export const tgGroupsRelations = relations(tgGroups, ({ many }) => ({
   members: many(tgGroupMembers),
   debts: many(debts),
-  chatSessions: many(chatSessions),
 }));
 
 export const debtsRelations = relations(debts, ({ one, many }) => ({
