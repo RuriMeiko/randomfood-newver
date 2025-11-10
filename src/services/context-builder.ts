@@ -6,7 +6,7 @@
 import type { TelegramMessage } from '../types/telegram';
 import type { DatabaseService } from './database';
 
-const stickerMap = require('../stickers/sticker-map.json');
+// Sticker map removed from context - now handled in system prompt
 
 export class ContextBuilderService {
   constructor(private dbService: DatabaseService) {}
@@ -60,15 +60,6 @@ ${confirmPrefs.length > 0 ?
         confirmPrefs.map(pref => `With User ID ${pref.targetUserId}: Debt Creation=${pref.requireDebtCreation}, Payment=${pref.requireDebtPayment}, Deletion=${pref.requireDebtDeletion}, Completion=${pref.requireDebtCompletion}`).join('\n') :
         'Mặc định yêu cầu xác nhận cho tất cả hành động.'
       }
-
-=== STICKER SYSTEM ===
-Available stickers by category:
-${Object.keys(stickerMap.emotions).map(emotion => `- ${emotion}: ${Object.keys(stickerMap.emotions[emotion]).length} stickers`).join('\n')}
-${Object.keys(stickerMap.situations).map(situation => `- ${situation}: ${Object.keys(stickerMap.situations[situation]).length} stickers`).join('\n')}
-- random: ${Object.keys(stickerMap.random).length} stickers
-
-You can add "sticker" field with sticker ID to any message.
-Use stickers sparingly for important moments only.
 
 **IMPORTANT: ALWAYS USE EXISTING DATABASE IDs AND CORRECT SCHEMA ===
 - When creating SQL, ONLY use the Database IDs listed above
