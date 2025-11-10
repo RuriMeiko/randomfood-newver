@@ -1,68 +1,8 @@
 {
   "emotions": {
-    "happy": {
-      "CAACAgUAAxkBAAEDawNpDvPu-bBsnBbpEP_WWqmiZCzPrAACpwMAAsSD0VZ4ii-zmnQUNjYE": "mèo nghi ngờ nhân sinh",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA2cAA7dF7xEAAUdRWj8-AAEXBA": "mèo vui vẻ",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA3kAA7dF7xEAAUdRWj8-AAEXBA": "mèo cười"
-    },
-    "sad": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA4MAA7dF7xEAAUdRWj8-AAEXBA": "mèo buồn",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA5EAA7dF7xEAAUdRWj8-AAEXBA": "mèo khóc"
-    },
-    "confused": {
-      "CAACAgUAAxkBAAEDawNpDvPu-bBsnBbpEP_WWqmiZCzPrAACpwMAAsSD0VZ4ii-zmnQUNjYE": "mèo nghi ngờ nhân sinh",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA6UAA7dF7xEAAUdRWj8-AAEXBA": "mèo bối rối"
-    },
-    "angry": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA7kAA7dF7xEAAUdRWj8-AAEXBA": "mèo giận dữ",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA8cAA7dF7xEAAUdRWj8-AAEXBA": "mèo tức giận"
-    },
-    "love": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA9UAA7dF7xEAAUdRWj8-AAEXBA": "mèo yêu thương",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA-MAA7dF7xEAAUdRWj8-AAEXBA": "mèo ôm ấp"
-    },
-    "sleepy": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA_EAA7dF7xEAAUdRWj8-AAEXBA": "mèo buồn ngủ",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAA_kAA7dF7xEAAUdRWj8-AAEXBA": "mèo ngủ gật"
-    }
-  },
-  "situations": {
-    "debt_created": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAABcBAAO3Re8RAAFHUNY": "mèo ghi chép",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAABkBAAO3Re8RAAFHUNY": "mèo nghiêm túc"
-    },
-    "debt_paid": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAABsBAAO3Re8RAAFHUNY": "mèo vui mừng",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAAB0BAAO3Re8RAAFHUNY": "mèo ăn mừng"
-    },
-    "debt_check": {
-      "CAACAgUAAxkBAAEDawNpDvPu-bBsnBbpEP_WWqmiZCzPrAACpwMAAsSD0VZ4ii-zmnQUNjYE": "mèo nghi ngờ nhân sinh",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAAB8BAAO3Re8RAAFHUNY": "mèo tò mò"
-    },
-    "food_suggestion": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACEBAAO3Re8RAAFHUNY": "mèo ăn uống",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACMBAAO3Re8RAAFHUNY": "mèo thèm ăn"
-    },
-    "no_debt": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACUBAAO3Re8RAAFHUNY": "mèo nhảy múa",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACcBAAO3Re8RAAFHUNY": "mèo vui sướng"
-    },
-    "greeting": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACkBAAO3Re8RAAFHUNY": "mèo chào hỏi",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAACsBAAO3Re8RAAFHUNY": "mèo vẫy tay"
-    },
-    "error": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAAC0BAAO3Re8RAAFHUNY": "mèo bối rối",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAAC8BAAO3Re8RAAFHUNY": "mèo thất vọng"
-    },
-    "confirmation": {
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAADEBAAO3Re8RAAFHUNY": "mèo nghi ngờ",
-      "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAADMBAAO3Re8RAAFHUNY": "mèo chờ đợi"
-    }
-  },
-  "random": {
-    "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAADUBAAO3Re8RAAFHUNY": "mèo random 1",
-    "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAADcBAAO3Re8RAAFHUNY": "mèo random 2",
-    "CAACAgEAAx0CWKdxIAABFDOLZjT4YOGFcOYu7uWPQBwwAAEBxRcAADkBAAO3Re8RAAFHUNY": "mèo random 3"
+    "CAACAgUAAxkBAAEDawNpDvPu-bBsnBbpEP_WWqmiZCzPrAACpwMAAsSD0VZ4ii-zmnQUNjYE": "😊",
+    "CAACAgIAAxkBAAEDawABaQ7zpqO1XgXKNxXouQjc7DrnUIsAAh4TAALo1uISO-z7TDFgFRY2BA": "😝",
+    "CAACAgIAAxkBAAEDa9hpEa2InJO_dVxw3_60HyH-rtJG-AAC1BMAAujW4hIacioqO7YTzjYE": "😢",
+    "CAACAgIAAxkBAAEDa9tpEa2trM8nT3hY5-ftS_-yWsxZ6gACJRMAAujW4hJtMs1D-n5UejYE": "❌"
   }
 }

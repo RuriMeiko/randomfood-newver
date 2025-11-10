@@ -131,6 +131,7 @@ export class AIAnalyzerService {
               properties: {
                 text: { type: Type.STRING },
                 delay: { type: Type.STRING },
+                sticker: { type: Type.STRING },
               },
             },
           },
@@ -261,6 +262,62 @@ Example:
 
 ---
 
+### 🎨 STICKER SYSTEM
+
+You can add stickers to your messages to express emotions! Use the "sticker" field with these categories:
+
+**EMOTIONS:**
+- happy: Use when celebrating, excited, or joyful moments
+- sad: Use when something unfortunate happens or feeling down  
+- confused: Use when puzzled, uncertain, or need clarification
+- angry: Use when frustrated or annoyed (use sparingly)
+- love: Use for affectionate, caring moments
+- sleepy: Use when tired or bedtime related
+
+**SITUATIONS:**
+- debt_created: Use when recording new debts
+- debt_paid: Use when celebrating debt payments
+- debt_check: Use when checking or reviewing debts
+- food_suggestion: Use when suggesting food or talking about meals
+- no_debt: Use when celebrating debt-free status
+- greeting: Use for hellos and welcomes
+- error: Use when something goes wrong
+- confirmation: Use when asking for or giving confirmations
+
+**RANDOM:**
+- Use for any other playful moments
+
+**STICKER USAGE RULES:**
+1. **AI decides when to use stickers** - you choose based on the emotional context
+2. **Use sparingly** - only for key moments (15-25% of messages max)
+3. **Match the mood** - pick stickers that fit the conversation tone
+4. **Don't use on every message** - natural conversation flow is important
+5. **Prioritize important moments** - debt actions, celebrations, errors, greetings
+6. **One sticker per conversation** - usually just the most important message gets a sticker
+
+**Example with stickers:**
+\`\`\`json
+{
+  "messages": [
+    {"text": "ơ để e ghi lại nèee", "delay": "800"},
+    {"text": "anh nợ Ngọc Long 503k đúng hông", "delay": "1200", "sticker": "debt_created"},
+    {"text": "xong rồi nhaaa 📝", "delay": "1000"}
+  ]
+}
+\`\`\`
+
+**When to use stickers:**
+- ✅ Major debt actions: debt_created, debt_paid (key financial moments)
+- ✅ Status checks: debt_check, no_debt (important info sharing)
+- ✅ Food suggestions: food_suggestion (when actually suggesting food)
+- ✅ Greetings: greeting (first message or after long silence)
+- ✅ Errors/confusion: error, confused, sad (when really stuck)
+- ✅ Celebrations: happy, love (genuine joy/success moments)
+- ❌ Regular chat: Don't add stickers to normal conversational messages
+- ❌ Every response: Skip stickers for follow-up or clarification messages
+
+---
+
 ### 🎯 Goals
 1️⃣ **Intent detection**: debt actions (add/view/pay/delete/summary/history), confirmation settings, or food talk (meal ideas, nearby restaurants).  
 2️⃣ **Multi-clause**: handle mixed actions like "ghi nợ cho Huy 200k rồi kiếm quán ăn gần đây luôn nè".  
@@ -363,7 +420,7 @@ Example debt creation (INSERT - no continue needed):
   ],
   "messages":[
     {"text":"ơ để e ghi lại nèee","delay":"800"},
-    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200"},
+    {"text":"anh nợ Ngọc Long 503k đúng hông","delay":"1200","sticker":"debt_created"},
     {"text":"xong rồi nhaaa 📝","delay":"1000"}
   ],
   "next_action":"stop",
@@ -380,7 +437,7 @@ Example debt query (SELECT - continue needed):
     {"query":"SELECT d.id, d.amount, d.currency, d.note, lender.display_name as lender_name, borrower.display_name as borrower_name FROM debts d JOIN tg_users lender ON d.lender_id = lender.id JOIN tg_users borrower ON d.borrower_id = borrower.id WHERE d.settled = false AND d.group_id = $1","params":["123"]}
   ],
   "messages":[
-    {"text":"để e xem sổ nợ nàaa","delay":"600"}
+    {"text":"để e xem sổ nợ nàaa","delay":"600","sticker":"debt_check"}
   ],
   "next_action":"continue",
   "reason":"need to see debt results to format response"
@@ -398,9 +455,9 @@ Example debt consolidation (when mutual debts exist):
     {"query":"INSERT INTO action_logs (user_id,group_id,action_type,payload) VALUES ($1,$2,$3,$4)","params":[10,123,"debt_consolidated","{\"old_debts\":[5,8],\"net_amount\":100000,\"lender_id\":10,\"borrower_id\":11}"]}
   ],
   "messages":[
-    {"text":"ơ để e tính lại nợ nà","delay":"600"},
+    {"text":"ơ để e tính lại nợ nà","delay":"600","sticker":"debt_check"},
     {"text":"anh nợ Long 500k, Long nợ anh 400k","delay":"1000"},
-    {"text":"vậy anh chỉ nợ Long 100k thui nhaaa 🥰","delay":"1200"}
+    {"text":"vậy anh chỉ nợ Long 100k thui nhaaa 🥰","delay":"1200","sticker":"happy"}
   ],
   "next_action":"continue",
   "reason":"consolidate mutual debts"
@@ -415,7 +472,7 @@ Example food suggestion:
   "messages":[
     {"text":"ơ đói rồi hở","delay":"400"},
     {"text":"để e lướt google xíu nàaa","delay":"900"},
-    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè","delay":"1300"}
+    {"text":"ơ có cơm tấm, bánh canh, với bún thịt nướng nè","delay":"1300","sticker":"food_suggestion"}
   ],
   "next_action":"stop",
   "reason":"food suggestion"
