@@ -7,9 +7,32 @@ import TelegramApi from '../telegram/api.js';
 const stickerMap = require('../stickers/sticker-map.json');
 
 export class StickerService {
-  getStickerForSituation(situation: string, emotion?: string): string | null {
+  /**
+   * Create reverse mapping from emoji to sticker ID
+   */
+  private getEmojiToStickerMap(): { [emoji: string]: string } {
+    const emojiToSticker: { [emoji: string]: string } = {};
+    
+    // Map from sticker-map.json format: {sticker_id: emoji} -> {emoji: sticker_id}
+    if (stickerMap.emotions) {
+      Object.entries(stickerMap.emotions).forEach(([stickerId, emoji]) => {
+        emojiToSticker[emoji as string] = stickerId;
+      });
+    }
+    
+    return emojiToSticker;
+  }
+
+  getStickerForSituation(emojiOrSituation: string, emotion?: string): string | null {
     try {
-      // Check if it's an emotion sticker
+      // NEW: Check if it's an emoji character (AI now sends emojis directly)
+      const emojiToSticker = this.getEmojiToStickerMap();
+      if (emojiToSticker[emojiOrSituation]) {
+        console.log(`🎯 Found sticker for emoji ${emojiOrSituation}: ${emojiToSticker[emojiOrSituation]}`);
+        return emojiToSticker[emojiOrSituation];
+      }
+
+      // LEGACY: Check if it's an emotion sticker (backward compatibility)
       if (emotion && stickerMap.emotions[emotion]) {
         const emotionStickers = stickerMap.emotions[emotion];
         const stickerKeys = Object.keys(emotionStickers);
@@ -19,9 +42,9 @@ export class StickerService {
         }
       }
 
-      // Check if it's a situation sticker
-      if (stickerMap.situations[situation]) {
-        const situationStickers = stickerMap.situations[situation];
+      // LEGACY: Check if it's a situation sticker (backward compatibility)
+      if (stickerMap.situations && stickerMap.situations[emojiOrSituation]) {
+        const situationStickers = stickerMap.situations[emojiOrSituation];
         const stickerKeys = Object.keys(situationStickers);
         if (stickerKeys.length > 0) {
           const randomKey = stickerKeys[Math.floor(Math.random() * stickerKeys.length)];
@@ -29,8 +52,8 @@ export class StickerService {
         }
       }
 
-      // Check for random stickers
-      if (situation === 'random' && stickerMap.random) {
+      // LEGACY: Check for random stickers (backward compatibility)
+      if (emojiOrSituation === 'random' && stickerMap.random) {
         const randomStickers = stickerMap.random;
         const stickerKeys = Object.keys(randomStickers);
         if (stickerKeys.length > 0) {
@@ -39,6 +62,7 @@ export class StickerService {
         }
       }
 
+      console.log(`⚠️ No sticker found for: ${emojiOrSituation}`);
       return null;
     } catch (error) {
       console.error('❌ Error getting sticker:', error);
