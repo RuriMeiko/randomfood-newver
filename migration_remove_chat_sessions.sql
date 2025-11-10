@@ -21,8 +21,8 @@ ALTER TABLE chat_messages ALTER COLUMN chat_id SET NOT NULL;
 ALTER TABLE chat_messages DROP CONSTRAINT IF EXISTS chat_messages_session_id_chat_sessions_id_fk;
 ALTER TABLE chat_messages DROP COLUMN session_id;
 
--- Step 5: Drop the chat_sessions table (optional - keep if you want to preserve data)
--- DROP TABLE chat_sessions;
+-- Step 5: Drop the chat_sessions table completely
+DROP TABLE IF EXISTS chat_sessions CASCADE;
 
 -- Step 6: Create index on chat_id for better query performance
 CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id);
