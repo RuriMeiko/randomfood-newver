@@ -1,6 +1,6 @@
 name = "randomfood"
 main = "build/index.mjs"
-compatibility_date = "2025-10-29"
+compatibility_date = "2025-11-10"
 account_id = "14d21caaf90af471a0e8f2d520a756ab"
 workers_dev = true
 send_metrics = true
@@ -21,3 +21,17 @@ command = "npm run build"
 # name = "randomfood-staging"
 # workers_dev = true
 
+[observability]
+enabled = false
+head_sampling_rate = 1
+
+[observability.logs]
+enabled = true
+head_sampling_rate = 1
+persist = true
+invocation_logs = true
+
+[observability.traces]
+enabled = false
+persist = true
+head_sampling_rate = 1
