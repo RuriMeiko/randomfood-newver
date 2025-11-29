@@ -84,6 +84,11 @@ export class AIBot {
       // Run typing and user setup in parallel
       await Promise.all([typingPromise, ensureUserPromise]);
 
+      // 1.5. Save user message IMMEDIATELY after ensuring user exists
+      console.log('💾 [AIBot] Step 1.5: Saving user message to DB...');
+      await this._dbService.saveUserMessage(message);
+      console.log('✅ [AIBot] User message saved before building context');
+
       // 2. Build context for AI from database
       console.log('🧠 [AIBot] Step 2: Building context from database...');
       const context = await this._contextBuilder.buildContext(message);
