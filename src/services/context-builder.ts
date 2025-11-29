@@ -31,8 +31,24 @@ export class ContextBuilderService {
     ]);
     console.log(recentMessages);
     
+    // Get current time in Vietnam timezone
+    const currentTime = new Date();
+    const vietnamTime = new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    }).format(currentTime);
+    
     // Build context string with complete user mapping
     const context = `
+=== THỜI GIAN HIỆN TẠI ===
+${vietnamTime} (Asia/Ho_Chi_Minh - GMT+7)
+
 === NGỮ CẢNH HIỆN TẠI ===
 Current User: ${message.from?.first_name || ''} (Telegram ID: ${message.from?.id || 0}, Database ID: ${userId})
 Chat: ${message.chat.type === 'private' ? 'Private' : message.chat.title}
@@ -43,7 +59,19 @@ ${allUsers.map(user => `DB ID: ${user.id} | Telegram ID: ${user.tgId} | Name: ${
 
 === LỊCH SỬ CHAT GẦN ĐÂY (50 tin nhắn mới nhất) ===
 ${recentMessages.length > 0 ? 
-  recentMessages.map(msg => `${msg.senderName}: ${msg.messageText}`).join('\\n') : 
+  recentMessages.map(msg => {
+    // Format timestamp for each message
+    const msgTime = msg.createdAt ? new Intl.DateTimeFormat('vi-VN', {
+      timeZone: 'Asia/Ho_Chi_Minh',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false
+    }).format(new Date(msg.createdAt)) : 'Unknown time';
+    
+    return `[${msgTime}] ${msg.senderName}: ${msg.messageText}`;
+  }).join('\\n') : 
   'Chưa có tin nhắn nào trong cuộc trò chuyện này.'
 }
 
