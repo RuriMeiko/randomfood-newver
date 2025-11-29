@@ -41,9 +41,9 @@ Group ID: ${groupId}
 === TẤT CẢ USERS TRONG DATABASE ===
 ${allUsers.map(user => `DB ID: ${user.id} | Telegram ID: ${user.tgId} | Name: ${user.displayName || 'Unknown'} | Username: @${user.tgUsername || 'none'}`).join('\n')}
 
-=== LỊCH SỬ CHAT GẦN ĐÂY (10 tin nhắn mới nhất) ===
+=== LỊCH SỬ CHAT GẦN ĐÂY (50 tin nhắn mới nhất) ===
 ${recentMessages.length > 0 ? 
-  recentMessages.map(msg => `${msg.senderName}: ${msg.messageText}`).join('\n') : 
+  recentMessages.map(msg => `${msg.senderName}: ${msg.messageText}`).join('\\n') : 
   'Chưa có tin nhắn nào trong cuộc trò chuyện này.'
 }
 
