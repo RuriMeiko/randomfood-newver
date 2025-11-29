@@ -37,23 +37,9 @@ export default {
 
         const message: TelegramMessage = body.message;
 
-        // Lưu tất cả tin nhắn TEXT vào database ngay lập tức (non-blocking)
-        if (message.text) {
-          ctx.waitUntil(
-            (async () => {
-              try {
-                await aiBot.database.ensureUserAndGroup(message);
-                await aiBot.database.saveUserMessage(message);
-              } catch (error) {
-                console.error('❌ Failed to save user message:', error);
-              }
-            })()
-          );
-        }
-
         // Nếu không có text, không xử lý tiếp
         if (!message.text) {
-          console.log('⏭️ No text in message - skipping AI processing');
+          console.log('⏭️ No text in message - skipping');
           return new Response('OK', { status: 200 });
         }
 
@@ -64,15 +50,28 @@ export default {
         console.log('Text:', message.text);
 
         // Kiểm tra xem có nên phản hồi không (chỉ áp dụng cho group)
-        if (!shouldRespondInGroup(body)) {
-          console.log('🚫 Skipping message - not a reply to bot or missing keywords');
-          return new Response('OK', { status: 200 });
+        const shouldRespond = shouldRespondInGroup(body);
+        
+        if (shouldRespond) {
+          // Trigger bot: xử lý message (lưu tin nhắn sẽ được xử lý bên trong processMessageWithMessagesAndStickers)
+          ctx.waitUntil(aiBot.processMessageWithMessagesAndStickers(message, env.API_TELEGRAM, ctx));
+          console.log('✅ Message processing started (non-blocking)');
+        } else {
+          // Không trigger bot: lưu tin nhắn non-blocking để có context sau này
+          ctx.waitUntil(
+            (async () => {
+              try {
+                await aiBot.database.ensureUserAndGroup(message);
+                await aiBot.database.saveUserMessage(message);
+                console.log('✅ User message saved to DB (non-blocking)');
+              } catch (error) {
+                console.error('❌ Failed to save user message:', error);
+              }
+            })()
+          );
+          console.log('🚫 Skipping AI processing - not a reply to bot or missing keywords');
         }
 
-        // Xử lý message bằng AI bot với stickers bằng waitUntil (non-blocking)
-        ctx.waitUntil(aiBot.processMessageWithMessagesAndStickers(message, env.API_TELEGRAM, ctx));
-
-        console.log('✅ Message processing started (non-blocking)');
         return new Response('OK', { status: 200 });
       } catch (error) {
         console.error('❌ Webhook error:', error);

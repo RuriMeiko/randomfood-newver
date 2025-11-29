@@ -313,17 +313,8 @@ export class DatabaseService {
     try {
       const chatId = message.chat.id;
 
-      // Save user message
-      await this.db.insert(chatMessages).values({
-        chatId,
-        sender: 'user',
-        senderTgId: message.from?.id || 0,
-        messageText: message.text || '',
-        intent: aiResponse?.intent || 'unknown',
-        sqlQuery: aiResponse?.sqlQuery || null,
-        sqlParams: aiResponse?.sqlParams ? JSON.stringify(aiResponse.sqlParams) : null,
-      } as any);
-
+      // Note: User message is already saved in index.ts, so we only save AI responses here
+      
       // Save AI response messages
       if (aiResponse?.messages && Array.isArray(aiResponse.messages)) {
         for (const aiMsg of aiResponse.messages) {
@@ -338,7 +329,7 @@ export class DatabaseService {
             sqlParams: aiResponse?.sqlParams ? JSON.stringify(aiResponse.sqlParams) : null,
           } as any);
         }
-        console.log(`💾 Saved user message + ${aiResponse.messages.length} AI messages to chat history`);
+        console.log(`💾 Saved ${aiResponse.messages.length} AI messages to chat history`);
       }
 
     } catch (error) {
