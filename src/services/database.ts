@@ -113,7 +113,7 @@ export class DatabaseService {
   /**
    * Get recent messages from a specific chat ID (all users + AI messages)
    * @param chatId - Telegram chat ID 
-   * @returns 10 most recent messages with sender info
+   * @returns 50 most recent messages with sender info
    */
   async getRecentMessagesByChatId(chatId: number) {
     try {
@@ -132,12 +132,12 @@ export class DatabaseService {
         .leftJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
         .where(eq(chatMessages.chatId, chatId))
         .orderBy(desc(chatMessages.createdAt))
-        .limit(10);
+        .limit(50);
 
       console.log(`📝 Found ${messages.length} recent messages for chat ${chatId}`);
       
-      // Format messages for better readability
-      return messages.map(msg => ({
+      // Format messages for better readability - reverse order to show oldest first
+      return messages.reverse().map(msg => ({
         sender: msg.sender,
         senderName: msg.sender === 'ai' ? 'Mây (AI)' : (msg.senderDisplayName || msg.senderUsername || `User ${msg.senderTgId}`),
         messageText: msg.messageText,
@@ -148,6 +148,30 @@ export class DatabaseService {
     } catch (error) {
       console.error('❌ Error getting recent messages by chat ID:', error);
       return [];
+    }
+  }
+
+  /**
+   * Save a user message to the database immediately (without AI response)
+   * @param message - Telegram message
+   */
+  async saveUserMessage(message: TelegramMessage) {
+    try {
+      const chatId = message.chat.id;
+      
+      await this.db.insert(chatMessages).values({
+        chatId,
+        sender: 'user',
+        senderTgId: message.from?.id || 0,
+        messageText: message.text || '',
+        intent: null,
+        sqlQuery: null,
+        sqlParams: null,
+      } as any);
+
+      console.log(`💾 Saved user message to chat history (chatId: ${chatId})`);
+    } catch (error) {
+      console.error('❌ Failed to save user message:', error);
     }
   }
 

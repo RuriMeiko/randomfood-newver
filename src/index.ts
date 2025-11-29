@@ -30,12 +30,32 @@ export default {
         console.log('Request Body:', JSON.stringify(body, null, 2));
 
         // Kiểm tra có message không
-        if (!body.message || !body.message.text) {
-          console.log('❌ No message or text found');
+        if (!body.message) {
+          console.log('❌ No message found');
           return new Response('OK', { status: 200 });
         }
 
         const message: TelegramMessage = body.message;
+
+        // Lưu tất cả tin nhắn TEXT vào database ngay lập tức (non-blocking)
+        if (message.text) {
+          ctx.waitUntil(
+            (async () => {
+              try {
+                await aiBot.database.ensureUserAndGroup(message);
+                await aiBot.database.saveUserMessage(message);
+              } catch (error) {
+                console.error('❌ Failed to save user message:', error);
+              }
+            })()
+          );
+        }
+
+        // Nếu không có text, không xử lý tiếp
+        if (!message.text) {
+          console.log('⏭️ No text in message - skipping AI processing');
+          return new Response('OK', { status: 200 });
+        }
 
         // 📝 LOG: In ra message được xử lý
         console.log('=== PROCESSING MESSAGE ===');
