@@ -44,6 +44,7 @@ export type ActionType =
   | 'sql_error';
 
 export interface AIConfig {
+  safetySettings?: any[];
   thinkingBudget: number;
   responseMimeType: string;
   responseSchema: any;
