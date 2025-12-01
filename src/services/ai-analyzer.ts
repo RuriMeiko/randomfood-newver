@@ -39,7 +39,7 @@ export class AIAnalyzerService {
         // Handle continue action
         if (parsed.next_action === "continue") {
           const continueResponse = await this.handleContinueAction(parsed, context, message, userMessage);
-          
+
           return {
             response: continueResponse.response || 'Xong rồi nha!',
             intent: continueResponse.intent || parsed.type,
@@ -111,9 +111,20 @@ export class AIAnalyzerService {
     }
   }
 
+  private getSafetyConfig(): any[] {
+    return [
+      {
+        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+        threshold: "OFF",
+      },
+    ];
+  }
+
   private getAIConfig(): AIConfig {
     return {
       thinkingBudget: 0,
+      safetySettings: this.getSafetyConfig(),
+
       responseMimeType: 'application/json',
       responseSchema: {
         type: Type.OBJECT,
