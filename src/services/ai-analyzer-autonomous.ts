@@ -8,7 +8,12 @@
  * - Database as external memory
  */
 
-import { GoogleGenAI, Type } from '@google/genai';
+import { 
+  GoogleGenAI, 
+  Type, 
+  HarmBlockThreshold, 
+  HarmCategory 
+} from '@google/genai';
 import type { TelegramMessage } from '../types/telegram';
 import type { AIResponse } from '../types/ai-bot';
 import type { DatabaseService } from './database';
@@ -98,6 +103,9 @@ export class AIAnalyzerService {
         const result = await this.genAI.models.generateContent({
           model: 'gemini-flash-latest',
           config: {
+            thinkingConfig: {
+              thinkingBudget: 0
+            },
             safetySettings: this.getSafetyConfig(),
             systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
             tools: [{ functionDeclarations: allTools }]
@@ -268,13 +276,25 @@ Please process this request. Remember:
   }
 
   /**
-   * Safety configuration
+   * Safety configuration - Block nothing for open conversation
    */
   private getSafetyConfig(): any[] {
     return [
       {
-        category: "HARM_CATEGORY_SEXUALLY_EXPLICIT",
-        threshold: "OFF",
+        category: HarmCategory.HARM_CATEGORY_HARASSMENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
+      },
+      {
+        category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+        threshold: HarmBlockThreshold.BLOCK_NONE,
       },
     ];
   }
