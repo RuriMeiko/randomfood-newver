@@ -111,7 +111,7 @@ export default {
     }
 
     return new Response(JSON.stringify({
-      message: 'Debt Tracking Bot API',
+      message: 'Mayishere API',
       endpoints: {
         'POST /webhook': 'Telegram webhook',
         'POST /setup-webhook': 'Setup Telegram webhook',
