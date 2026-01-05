@@ -23,13 +23,14 @@ export class AIBotAutonomous {
   private _contextBuilder: ContextBuilderService;
   private _aiAnalyzer: AIAnalyzerService;
 
-  constructor(apiKey: string, databaseUrl: string, env?: any) {
+  constructor(apiKey: string, databaseUrl: string) {
     console.log('🤖 [AIBotAutonomous] Initializing autonomous agent...');
     
     // Initialize services
     this._dbService = new DatabaseService(databaseUrl);
     this._contextBuilder = new ContextBuilderService(this._dbService);
-    this._aiAnalyzer = new AIAnalyzerService(apiKey, this._dbService, env);
+    // Pass databaseUrl to AIAnalyzerService for ApiKeyManager
+    this._aiAnalyzer = new AIAnalyzerService(apiKey, this._dbService, databaseUrl);
     
     console.log('✅ [AIBotAutonomous] Autonomous agent initialized');
   }

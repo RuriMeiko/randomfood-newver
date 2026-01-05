@@ -26,19 +26,36 @@ export class AIAnalyzerService {
   private genAI: GoogleGenAI;
   private toolExecutor: ToolExecutor;
   private apiKeyManager: ApiKeyManager | null = null;
+  private initPromise: Promise<void> | null = null;
 
-  constructor(apiKey: string, private dbService: DatabaseService, env?: any) {
-    // If env is provided, use ApiKeyManager for key rotation
-    if (env) {
-      this.apiKeyManager = new ApiKeyManager(env);
-      const { client } = this.apiKeyManager.createClient();
-      this.genAI = client;
+  constructor(apiKey: string, private dbService: DatabaseService, databaseUrl?: string) {
+    // If databaseUrl is provided, use ApiKeyManager with database backend
+    if (databaseUrl) {
+      this.apiKeyManager = new ApiKeyManager(databaseUrl);
+      // Initialize async - will be awaited before first use
+      this.initPromise = this.apiKeyManager.initialize().then(() => {
+        console.log('✅ [AIAnalyzer] ApiKeyManager initialized with database');
+      }).catch(error => {
+        console.error('❌ [AIAnalyzer] Failed to initialize ApiKeyManager:', error);
+        // Fallback to single key
+        this.genAI = new GoogleGenAI({ apiKey: apiKey });
+      });
     } else {
-      // Fallback to single key
+      // Fallback to single key from env
       this.genAI = new GoogleGenAI({ apiKey: apiKey });
     }
     
     this.toolExecutor = new ToolExecutor(dbService);
+  }
+
+  /**
+   * Ensure ApiKeyManager is initialized
+   */
+  private async ensureInitialized(): Promise<void> {
+    if (this.initPromise) {
+      await this.initPromise;
+      this.initPromise = null; // Only wait once
+    }
   }
 
   /**
@@ -51,6 +68,9 @@ export class AIAnalyzerService {
     ctx?: ExecutionContext
   ): Promise<AIResponse> {
     console.log('🤖 [AIAnalyzer] Starting autonomous agent loop...');
+
+    // Ensure ApiKeyManager is initialized
+    await this.ensureInitialized();
 
     try {
       // Build the initial prompt with context

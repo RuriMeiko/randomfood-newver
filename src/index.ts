@@ -15,9 +15,9 @@ export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     // Set environment variables
 
-    // Initialize AI Bot with env for API key rotation
+    // Initialize AI Bot with database URL (will use DB for API key management)
     if (!aiBot) {
-      aiBot = new AIBot(env.GEMINI_API_KEY, env.NEON_DATABASE_URL, env);
+      aiBot = new AIBot(env.GEMINI_API_KEY, env.NEON_DATABASE_URL);
     }
 
     const url = new URL(request.url);
