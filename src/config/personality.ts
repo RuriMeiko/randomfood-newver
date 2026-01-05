@@ -72,16 +72,18 @@ export const EMOTION_COUPLING: Array<[string, string, number]> = [
   ['sadness', 'hurt', 0.6],        // Sad → more hurt
   ['sadness', 'neediness', 0.5],   // Sad → needier
   ['sadness', 'playfulness', -0.6], // Sad → less playful
+  ['sadness', 'warmth', -0.4],     // REFINED: Sad → less warm (withdrawal)
   
   // Anger relationships
   ['anger', 'trust', -0.8],        // Angry → less trusting
   ['anger', 'affection', -0.6],    // Angry → less affectionate
   ['anger', 'hurt', 0.5],          // Angry → more hurt
   ['anger', 'warmth', -0.7],       // Angry → less warm
+  ['anger', 'sadness', 0.3],       // REFINED: Anger can transition to sadness (weak)
   
   // Fear relationships
   ['fear', 'trust', -0.7],         // Fearful → less trusting
-  ['fear', 'neediness', 0.6],      // Fearful → needier
+  ['fear', 'neediness', 0.5],      // REFINED: Fearful → needier (reduced from 0.6)
   ['fear', 'playfulness', -0.5],   // Fearful → less playful
   
   // Trust relationships
@@ -89,6 +91,7 @@ export const EMOTION_COUPLING: Array<[string, string, number]> = [
   ['trust', 'anger', -0.5],        // Trusting → less angry
   ['trust', 'warmth', 0.7],        // Trusting → warmer
   ['trust', 'affection', 0.6],     // Trusting → more affectionate
+  ['trust', 'playfulness', 0.5],   // REFINED: Trust enables playfulness (moderate)
   
   // Affection relationships
   ['affection', 'anger', -0.7],    // Affectionate → less angry
@@ -101,20 +104,25 @@ export const EMOTION_COUPLING: Array<[string, string, number]> = [
   ['hurt', 'affection', -0.6],     // Hurt → less affectionate
   ['hurt', 'neediness', 0.6],      // Hurt → needier
   ['hurt', 'warmth', -0.5],        // Hurt → less warm
+  ['hurt', 'sadness', 0.5],        // REFINED: Hurt can branch to sadness (moderate)
+  ['hurt', 'anger', 0.4],          // REFINED: Hurt can branch to anger (moderate)
   
   // Playfulness relationships
   ['playfulness', 'sadness', -0.5], // Playful → less sad
   ['playfulness', 'anger', -0.4],   // Playful → less angry
   ['playfulness', 'joy', 0.6],      // Playful → happier
+  ['playfulness', 'trust', 0.3],    // REFINED: Playfulness builds trust (weak)
   
   // Neediness relationships
-  ['neediness', 'trust', -0.4],    // Needy → less confident/trusting
+  ['neediness', 'trust', -0.3],    // REFINED: Needy → less confident (reduced from -0.4)
   ['neediness', 'warmth', -0.3],   // Needy → less warm (insecure)
   
   // Warmth relationships
   ['warmth', 'anger', -0.6],       // Warm → less angry
   ['warmth', 'disgust', -0.5],     // Warm → less disgusted
   ['warmth', 'affection', 0.7],    // Warm → more affectionate
+  ['warmth', 'fear', -0.4],        // REFINED: Warm → less fearful (self-regulation)
+  ['warmth', 'joy', 0.4],          // REFINED: Warm → happier (moderate)
   
   // Excitement relationships
   ['excitement', 'sadness', -0.5], // Excited → less sad
