@@ -28,7 +28,7 @@ export class AIAnalyzerService {
   private apiKeyManager: ApiKeyManager | null = null;
   private initPromise: Promise<void> | null = null;
 
-  constructor(apiKey: string, private dbService: DatabaseService, databaseUrl?: string) {
+  constructor(private dbService: DatabaseService, databaseUrl?: string) {
     // If databaseUrl is provided, use ApiKeyManager with database backend
     if (databaseUrl) {
       this.apiKeyManager = new ApiKeyManager(databaseUrl);
@@ -37,12 +37,10 @@ export class AIAnalyzerService {
         console.log('✅ [AIAnalyzer] ApiKeyManager initialized with database');
       }).catch(error => {
         console.error('❌ [AIAnalyzer] Failed to initialize ApiKeyManager:', error);
-        // Fallback to single key
-        this.genAI = new GoogleGenAI({ apiKey: apiKey });
+        throw new Error('ApiKeyManager initialization failed - cannot proceed without API keys');
       });
     } else {
-      // Fallback to single key from env
-      this.genAI = new GoogleGenAI({ apiKey: apiKey });
+      throw new Error('DatabaseUrl is required for API key management');
     }
     
     this.toolExecutor = new ToolExecutor(dbService);

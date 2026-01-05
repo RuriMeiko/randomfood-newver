@@ -2,7 +2,6 @@ import { AIBotAutonomous as AIBot, type TelegramMessage } from './ai-bot-autonom
 import { getWebhookUIHTML } from './utils/webhook-ui';
 
 export interface Env {
-  GEMINI_API_KEY: string;
   API_TELEGRAM: string;
   NEON_DATABASE_URL: string;
   WEBHOOK_ADMIN_USER?: string;
@@ -13,11 +12,9 @@ let aiBot: AIBot;
 
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
-    // Set environment variables
-
-    // Initialize AI Bot with database URL (will use DB for API key management)
+    // Initialize AI Bot with database URL only (API keys from DB)
     if (!aiBot) {
-      aiBot = new AIBot(env.GEMINI_API_KEY, env.NEON_DATABASE_URL);
+      aiBot = new AIBot(env.NEON_DATABASE_URL);
     }
 
     const url = new URL(request.url);

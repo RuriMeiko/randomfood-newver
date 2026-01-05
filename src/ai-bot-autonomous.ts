@@ -23,14 +23,14 @@ export class AIBotAutonomous {
   private _contextBuilder: ContextBuilderService;
   private _aiAnalyzer: AIAnalyzerService;
 
-  constructor(apiKey: string, databaseUrl: string) {
+  constructor(databaseUrl: string) {
     console.log('🤖 [AIBotAutonomous] Initializing autonomous agent...');
     
     // Initialize services
     this._dbService = new DatabaseService(databaseUrl);
     this._contextBuilder = new ContextBuilderService(this._dbService);
-    // Pass databaseUrl to AIAnalyzerService for ApiKeyManager
-    this._aiAnalyzer = new AIAnalyzerService(apiKey, this._dbService, databaseUrl);
+    // Pass databaseUrl to AIAnalyzerService for ApiKeyManager (no API key needed)
+    this._aiAnalyzer = new AIAnalyzerService(this._dbService, databaseUrl);
     
     console.log('✅ [AIBotAutonomous] Autonomous agent initialized');
   }
@@ -86,23 +86,33 @@ export class AIBotAutonomous {
       // 4. Process messages with stickers
       const messages = aiResponse.messages || [{ text: 'Xin lỗi, em chưa hiểu 🥺', delay: '1000' }];
 
-      // 5. Send messages to Telegram
+      // 5. Send messages to Telegram with persistent typing indicator
       console.log('📤 [AIBotAutonomous] Step 4: Sending messages to Telegram...');
-      for (const msg of messages) {
-        const delay = parseInt(msg.delay) || 1000;
-        
-        // Show typing indicator
-        await telegramApi.sendChatAction(message.chat.id, 'typing');
-        
-        // Wait for natural typing delay
-        await new Promise(resolve => setTimeout(resolve, delay));
-        
-        // Send message
-        await telegramApi.sendMessage({ 
-          chat_id: message.chat.id, 
-          text: msg.text 
-        });
-        console.log(`✅ [AIBotAutonomous] Sent message: ${msg.text.substring(0, 50)}...`);
+      
+      // Keep typing indicator active throughout message sending
+      const typingInterval = setInterval(() => {
+        telegramApi.sendChatAction(message.chat.id, 'typing').catch(err => 
+          console.warn('⚠️ [AIBotAutonomous] Failed to send typing action:', err)
+        );
+      }, 4000); // Telegram typing expires after 5s, refresh every 4s
+      
+      try {
+        for (const msg of messages) {
+          const delay = parseInt(msg.delay) || 1000;
+          
+          // Wait for natural typing delay
+          await new Promise(resolve => setTimeout(resolve, delay));
+          
+          // Send message
+          await telegramApi.sendMessage({ 
+            chat_id: message.chat.id, 
+            text: msg.text 
+          });
+          console.log(`✅ [AIBotAutonomous] Sent message: ${msg.text.substring(0, 50)}...`);
+        }
+      } finally {
+        // Always clear typing indicator
+        clearInterval(typingInterval);
       }
 
       console.log('✅ [AIBotAutonomous] Message processing complete');

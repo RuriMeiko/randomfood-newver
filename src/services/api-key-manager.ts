@@ -11,7 +11,7 @@
 import { GoogleGenAI } from '@google/genai';
 import { drizzle } from 'drizzle-orm/neon-http';
 import { neon } from '@neondatabase/serverless';
-import { eq, and, sql as drizzleSql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { apiKeys } from '../db/schema';
 import type { ApiKey } from '../db/schema';
 
@@ -152,8 +152,8 @@ export class ApiKeyManager {
       // Use database function for atomic increment with auto-reset
       await this.sql`SELECT increment_request_count(${keyName})`;
       
-      // Refresh local cache
-      await this.refreshKeys();
+      // Update only this key in local cache (no full refresh)
+      await this.updateSingleKeyCache(keyId);
     } catch (error) {
       console.error(`❌ [ApiKeyManager] Error incrementing request count:`, error);
     }
@@ -175,8 +175,8 @@ export class ApiKeyManager {
         })
         .where(eq(apiKeys.id, keyId));
       
-      // Update local cache
-      await this.refreshKeys();
+      // Update only this key in local cache
+      await this.updateSingleKeyCache(keyId);
       
       console.log(`✅ [ApiKeyManager] Key ${keyId} marked as successful`);
     } catch (error) {
@@ -206,8 +206,8 @@ export class ApiKeyManager {
         })
         .where(eq(apiKeys.id, keyId));
       
-      // Refresh keys to get updated status
-      await this.refreshKeys();
+      // Update only this key in local cache
+      await this.updateSingleKeyCache(keyId);
       
       // Rotate to next key
       this.rotateKey();
@@ -215,6 +215,28 @@ export class ApiKeyManager {
       console.warn(`⚠️ [ApiKeyManager] Key ${key.keyName} marked as failed (429: ${is429})`);
     } catch (error) {
       console.error(`❌ [ApiKeyManager] Error marking failure:`, error);
+    }
+  }
+
+  /**
+   * Update single key in cache (optimize: no full refresh)
+   */
+  private async updateSingleKeyCache(keyId: number): Promise<void> {
+    try {
+      const updated = await this.db
+        .select()
+        .from(apiKeys)
+        .where(eq(apiKeys.id, keyId))
+        .limit(1);
+      
+      if (updated.length > 0) {
+        const index = this.keys.findIndex(k => k.id === keyId);
+        if (index >= 0) {
+          this.keys[index] = updated[0];
+        }
+      }
+    } catch (error) {
+      console.error(`❌ [ApiKeyManager] Failed to update single key cache:`, error);
     }
   }
 
