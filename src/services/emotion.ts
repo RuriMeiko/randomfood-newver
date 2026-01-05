@@ -256,7 +256,7 @@ Note: These emotions affect your tone and warmth, NOT your helpfulness or accura
     );
     
     const state: EmotionalState = {};
-    for (const row of result.rows) {
+    for (const row of result) {
       state[row.emotion_name] = parseFloat(row.value);
       
       // Track last update time

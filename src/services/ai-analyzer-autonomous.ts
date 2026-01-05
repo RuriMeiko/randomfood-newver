@@ -20,13 +20,24 @@ import type { DatabaseService } from './database';
 import { allTools } from '../tools';
 import { ToolExecutor } from '../tools/executor';
 import { AUTONOMOUS_AGENT_PROMPT } from '../prompts/autonomous-agent';
+import { ApiKeyManager } from './api-key-manager';
 
 export class AIAnalyzerService {
   private genAI: GoogleGenAI;
   private toolExecutor: ToolExecutor;
+  private apiKeyManager: ApiKeyManager | null = null;
 
-  constructor(apiKey: string, private dbService: DatabaseService) {
-    this.genAI = new GoogleGenAI({ apiKey: apiKey });
+  constructor(apiKey: string, private dbService: DatabaseService, env?: any) {
+    // If env is provided, use ApiKeyManager for key rotation
+    if (env) {
+      this.apiKeyManager = new ApiKeyManager(env);
+      const { client } = this.apiKeyManager.createClient();
+      this.genAI = client;
+    } else {
+      // Fallback to single key
+      this.genAI = new GoogleGenAI({ apiKey: apiKey });
+    }
+    
     this.toolExecutor = new ToolExecutor(dbService);
   }
 
@@ -100,18 +111,46 @@ export class AIAnalyzerService {
 
       try {
         // Call Gemini with tools
-        const result = await this.genAI.models.generateContent({
-          model: 'gemini-flash-latest',
-          config: {
-            thinkingConfig: {
-              thinkingBudget: 0
+        // Note: We don't use responseSchema here because it conflicts with tool calling
+        // The model needs freedom to choose between calling tools or returning final response
+        
+        // Use ApiKeyManager if available, otherwise direct call
+        const generateContent = async () => {
+          return await this.genAI.models.generateContent({
+            model: 'gemini-flash-latest',
+            config: {
+              thinkingConfig: {
+                thinkingBudget: 0
+              },
+              safetySettings: this.getSafetyConfig(),
+              systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+              tools: [{ functionDeclarations: allTools }]
             },
-            safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
-            tools: [{ functionDeclarations: allTools }]
-          },
-          contents: conversationHistory
-        });
+            contents: conversationHistory
+          });
+        };
+        
+        let result;
+        if (this.apiKeyManager) {
+          // Use ApiKeyManager with automatic retry
+          result = await this.apiKeyManager.executeWithRetry(
+            (client) => client.models.generateContent({
+              model: 'gemini-flash-latest',
+              config: {
+                thinkingConfig: {
+                  thinkingBudget: 0
+                },
+                safetySettings: this.getSafetyConfig(),
+                systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+                tools: [{ functionDeclarations: allTools }]
+              },
+              contents: conversationHistory
+            })
+          );
+        } else {
+          // Direct call without key rotation
+          result = await generateContent();
+        }
 
         const candidate = result?.candidates?.[0];
         if (!candidate) {

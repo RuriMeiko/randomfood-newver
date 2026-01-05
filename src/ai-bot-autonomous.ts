@@ -23,13 +23,13 @@ export class AIBotAutonomous {
   private _contextBuilder: ContextBuilderService;
   private _aiAnalyzer: AIAnalyzerService;
 
-  constructor(apiKey: string, databaseUrl: string) {
+  constructor(apiKey: string, databaseUrl: string, env?: any) {
     console.log('🤖 [AIBotAutonomous] Initializing autonomous agent...');
     
     // Initialize services
     this._dbService = new DatabaseService(databaseUrl);
     this._contextBuilder = new ContextBuilderService(this._dbService);
-    this._aiAnalyzer = new AIAnalyzerService(apiKey, this._dbService);
+    this._aiAnalyzer = new AIAnalyzerService(apiKey, this._dbService, env);
     
     console.log('✅ [AIBotAutonomous] Autonomous agent initialized');
   }
@@ -88,9 +88,15 @@ export class AIBotAutonomous {
       // 5. Send messages to Telegram
       console.log('📤 [AIBotAutonomous] Step 4: Sending messages to Telegram...');
       for (const msg of messages) {
-        // Send text message with delay
         const delay = parseInt(msg.delay) || 1000;
+        
+        // Show typing indicator
+        await telegramApi.sendChatAction(message.chat.id, 'typing');
+        
+        // Wait for natural typing delay
         await new Promise(resolve => setTimeout(resolve, delay));
+        
+        // Send message
         await telegramApi.sendMessage({ 
           chat_id: message.chat.id, 
           text: msg.text 

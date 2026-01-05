@@ -1,5 +1,9 @@
-import { pgTable, serial, text, timestamp, boolean, integer, bigint, numeric, jsonb, unique } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, timestamp, boolean, integer, bigint, numeric, unique } from 'drizzle-orm/pg-core';
 import { relations } from 'drizzle-orm';
+
+// ==========================================
+// USER-FACING TABLES (visible to AI)
+// ==========================================
 
 // Telegram Users
 export const tgUsers = pgTable('tg_users', {
@@ -7,9 +11,7 @@ export const tgUsers = pgTable('tg_users', {
   tgId: bigint('tg_id', { mode: 'number' }).unique().notNull(),
   tgUsername: text('tg_username'),
   displayName: text('display_name'),
-  realName: text('real_name'),
   createdAt: timestamp('created_at').defaultNow(),
-  updatedAt: timestamp('updated_at').defaultNow(),
 });
 
 // Telegram Groups/Chats
@@ -21,145 +23,101 @@ export const tgGroups = pgTable('tg_groups', {
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// Group Members
-export const tgGroupMembers = pgTable('tg_group_members', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  groupId: bigint('group_id', { mode: 'number' }).references(() => tgGroups.id, { onDelete: 'cascade' }),
-  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }),
-  joinedAt: timestamp('joined_at').defaultNow(),
-  nicknameInGroup: text('nickname_in_group'),
-  lastSeen: timestamp('last_seen').defaultNow(),
-}, (table) => ({
-  uniqueGroupUser: unique().on(table.groupId, table.userId),
-}));
-
-// Debts
+// Debts - Simple debt records (auto-consolidated via views)
 export const debts = pgTable('debts', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   groupId: bigint('group_id', { mode: 'number' }).references(() => tgGroups.id, { onDelete: 'set null' }),
   lenderId: bigint('lender_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
   borrowerId: bigint('borrower_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
   amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
-  currency: text('currency').default('VND'),
   note: text('note'),
-  occurredAt: timestamp('occurred_at').defaultNow(),
-  settled: boolean('settled').default(false),
-});
-
-// Payments
-export const payments = pgTable('payments', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  debtId: bigint('debt_id', { mode: 'number' }).references(() => debts.id, { onDelete: 'cascade' }),
-  payerId: bigint('payer_id', { mode: 'number' }).references(() => tgUsers.id),
-  amount: numeric('amount', { precision: 14, scale: 2 }).notNull(),
-  paidAt: timestamp('paid_at').defaultNow(),
-  note: text('note'),
-});
-
-
-// Chat Messages
-export const chatMessages = pgTable('chat_messages', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  chatId: bigint('chat_id', { mode: 'number' }).notNull(), // Telegram chat ID directly
-  sender: text('sender').$type<'user' | 'ai'>().notNull(),
-  senderTgId: bigint('sender_tg_id', { mode: 'number' }),
-  messageText: text('message_text').notNull(),
-  delayMs: integer('delay_ms'),
-  intent: text('intent'),
-  sqlQuery: text('sql_query'),
-  sqlParams: jsonb('sql_params'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// Name Aliases - ánh xạ tên tự nhiên -> user_id
+// Chat Messages - Chat history for AI context
+export const chatMessages = pgTable('chat_messages', {
+  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
+  chatId: bigint('chat_id', { mode: 'number' }).notNull(),
+  sender: text('sender').$type<'user' | 'ai'>().notNull(),
+  senderTgId: bigint('sender_tg_id', { mode: 'number' }),
+  messageText: text('message_text').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+});
+
+// Name Aliases - AI learns nicknames
 export const nameAliases = pgTable('name_aliases', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
   ownerUserId: bigint('owner_user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
   aliasText: text('alias_text').notNull(),
   refUserId: bigint('ref_user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'set null' }),
-  confidence: numeric('confidence', { precision: 3, scale: 2 }).default('0'),
-  lastUsed: timestamp('last_used').defaultNow(),
 }, (table) => ({
   uniqueOwnerAlias: unique().on(table.ownerUserId, table.aliasText),
 }));
 
-// Food Items
-export const foodItems = pgTable('food_items', {
+// Bot Emotional State - Global emotional state
+export const botEmotionalState = pgTable('bot_emotional_state', {
+  emotionName: text('emotion_name').primaryKey(),
+  value: numeric('value', { precision: 3, scale: 2 }).notNull(),
+  lastUpdated: timestamp('last_updated').defaultNow(),
+});
+
+// Interaction Events - Audit log for emotion changes
+export const interactionEvents = pgTable('interaction_events', {
   id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  name: text('name').notNull(),
-  description: text('description'),
-  category: text('category'),
-  region: text('region'),
-  imageUrl: text('image_url'),
-  sourceUrl: text('source_url'),
+  userTgId: bigint('user_tg_id', { mode: 'number' }).notNull(),
+  messageText: text('message_text'),
+  valence: numeric('valence', { precision: 3, scale: 2 }),
+  intensity: numeric('intensity', { precision: 3, scale: 2 }),
+  targetEmotions: text('target_emotions').array(),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
-// Food Suggestions
-export const foodSuggestions = pgTable('food_suggestions', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }),
-  groupId: bigint('group_id', { mode: 'number' }).references(() => tgGroups.id, { onDelete: 'set null' }),
-  foodId: bigint('food_id', { mode: 'number' }).references(() => foodItems.id, { onDelete: 'set null' }),
-  query: text('query'),
-  aiResponse: text('ai_response'),
-  suggestedAt: timestamp('suggested_at').defaultNow(),
-});
+// ==========================================
+// SYSTEM TABLES (hidden from AI context)
+// ==========================================
 
-// Action Logs
-export const actionLogs = pgTable('action_logs', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id),
-  groupId: bigint('group_id', { mode: 'number' }).references(() => tgGroups.id),
-  actionType: text('action_type'),
-  payload: jsonb('payload'),
-  createdAt: timestamp('created_at').defaultNow(),
-});
-
-// Pending Confirmations - for two-party confirmations on debt operations
-export const pendingConfirmations = pgTable('pending_confirmations', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  debtId: bigint('debt_id', { mode: 'number' }).references(() => debts.id, { onDelete: 'cascade' }).notNull(),
-  actionType: text('action_type').notNull(), // 'debt_completion', 'debt_deletion', etc.
-  requestedBy: bigint('requested_by', { mode: 'number' }).references(() => tgUsers.id).notNull(),
-  lenderConfirmed: boolean('lender_confirmed').default(false),
-  borrowerConfirmed: boolean('borrower_confirmed').default(false),
-  createdAt: timestamp('created_at').defaultNow(),
-  expiresAt: timestamp('expires_at'), // auto-expire after some time
-});
-
-// Confirmation Preferences - user preferences for when confirmations are required
-export const confirmationPreferences = pgTable('confirmation_preferences', {
-  id: bigint('id', { mode: 'number' }).primaryKey().generatedByDefaultAsIdentity(),
-  userId: bigint('user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
-  targetUserId: bigint('target_user_id', { mode: 'number' }).references(() => tgUsers.id, { onDelete: 'cascade' }).notNull(),
-  // Confirmation settings
-  requireDebtCreation: boolean('require_debt_creation').default(true),
-  requireDebtPayment: boolean('require_debt_payment').default(true),
-  requireDebtDeletion: boolean('require_debt_deletion').default(true),
-  requireDebtCompletion: boolean('require_debt_completion').default(true),
+// API Keys Management - For rate limiting and key rotation
+// This table is NEVER visible to AI - it's purely system-level
+export const apiKeys = pgTable('api_keys', {
+  id: serial('id').primaryKey(),
+  keyName: text('key_name').unique().notNull(), // e.g., "primary", "key_1", "key_2"
+  apiKey: text('api_key').notNull(), // The actual API key
+  isActive: boolean('is_active').default(true),
+  
+  // Rate limiting counters
+  requestsPerMinute: integer('requests_per_minute').default(0), // Current RPM count
+  requestsPerDay: integer('requests_per_day').default(0), // Current RPD count
+  
+  // Limits
+  rpmLimit: integer('rpm_limit').default(5), // Requests per minute limit
+  rpdLimit: integer('rpd_limit').default(20), // Requests per day limit
+  
+  // Status tracking
+  isBlocked: boolean('is_blocked').default(false),
+  blockedUntil: timestamp('blocked_until'), // When the key will be unblocked
+  failureCount: integer('failure_count').default(0),
+  lastFailure: timestamp('last_failure'),
+  
+  // Usage tracking
+  lastUsedAt: timestamp('last_used_at'),
+  lastResetMinute: timestamp('last_reset_minute').defaultNow(), // For RPM reset
+  lastResetDay: timestamp('last_reset_day').defaultNow(), // For RPD reset
+  
+  // Metadata
   createdAt: timestamp('created_at').defaultNow(),
   updatedAt: timestamp('updated_at').defaultNow(),
-}, (table) => ({
-  uniqueUserTarget: unique().on(table.userId, table.targetUserId),
-}));
+});
 
-// Relations
+// ==========================================
+// RELATIONS
+// ==========================================
+
 export const tgUsersRelations = relations(tgUsers, ({ many }) => ({
-  groupMemberships: many(tgGroupMembers),
   debtsAsLender: many(debts, { relationName: 'lender' }),
   debtsAsBorrower: many(debts, { relationName: 'borrower' }),
-  payments: many(payments),
-  nameAliases: many(nameAliases, { relationName: 'owner' }),
-  aliasReferences: many(nameAliases, { relationName: 'reference' }),
 }));
 
-export const tgGroupsRelations = relations(tgGroups, ({ many }) => ({
-  members: many(tgGroupMembers),
-  debts: many(debts),
-}));
-
-export const debtsRelations = relations(debts, ({ one, many }) => ({
+export const debtsRelations = relations(debts, ({ one }) => ({
   lender: one(tgUsers, { 
     fields: [debts.lenderId], 
     references: [tgUsers.id],
@@ -174,19 +132,25 @@ export const debtsRelations = relations(debts, ({ one, many }) => ({
     fields: [debts.groupId], 
     references: [tgGroups.id] 
   }),
-  payments: many(payments),
 }));
 
-// Type exports
+// ==========================================
+// TYPE EXPORTS
+// ==========================================
+
 export type TgUser = typeof tgUsers.$inferSelect;
 export type NewTgUser = typeof tgUsers.$inferInsert;
 export type TgGroup = typeof tgGroups.$inferSelect;
 export type NewTgGroup = typeof tgGroups.$inferInsert;
 export type Debt = typeof debts.$inferSelect;
 export type NewDebt = typeof debts.$inferInsert;
+export type ChatMessage = typeof chatMessages.$inferSelect;
+export type NewChatMessage = typeof chatMessages.$inferInsert;
 export type NameAlias = typeof nameAliases.$inferSelect;
 export type NewNameAlias = typeof nameAliases.$inferInsert;
-export type PendingConfirmation = typeof pendingConfirmations.$inferSelect;
-export type NewPendingConfirmation = typeof pendingConfirmations.$inferInsert;
-export type ConfirmationPreference = typeof confirmationPreferences.$inferSelect;
-export type NewConfirmationPreference = typeof confirmationPreferences.$inferInsert;
+export type BotEmotionalState = typeof botEmotionalState.$inferSelect;
+export type NewBotEmotionalState = typeof botEmotionalState.$inferInsert;
+export type InteractionEvent = typeof interactionEvents.$inferSelect;
+export type NewInteractionEvent = typeof interactionEvents.$inferInsert;
+export type ApiKey = typeof apiKeys.$inferSelect;
+export type NewApiKey = typeof apiKeys.$inferInsert;

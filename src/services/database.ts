@@ -12,10 +12,6 @@ import {
   debts,
   nameAliases,
   chatMessages,
-  actionLogs,
-  pendingConfirmations,
-  confirmationPreferences,
-  payments
 } from '../db/schema';
 import type { TelegramMessage } from '../types/telegram';
 import type { SQLExecutionContext, ActionLogData, ActionType, DebtInfo } from '../types/ai-bot';
@@ -294,19 +290,9 @@ export class DatabaseService {
   }
 
   async logAction(actionData: ActionLogData) {
-    try {
-      if (actionData.userId) {
-        await this.db.insert(actionLogs).values({
-          userId: actionData.userId,
-          groupId: actionData.groupId,
-          actionType: actionData.actionType,
-          payload: JSON.stringify(actionData.payload),
-        });
-      }
-    } catch (error) {
-      console.error('❌ Failed to log action:', error);
-      // Don't throw here to avoid breaking the main flow
-    }
+    // Action logging disabled - table removed from schema
+    // Keep function for backward compatibility
+    return;
   }
 
   async saveConversation(message: TelegramMessage, aiResponse: any) {
