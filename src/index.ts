@@ -1,9 +1,12 @@
 import { AIBotAutonomous as AIBot, type TelegramMessage } from './ai-bot-autonomous';
+import { getWebhookUIHTML } from './utils/webhook-ui';
 
 export interface Env {
   GEMINI_API_KEY: string;
   API_TELEGRAM: string;
   NEON_DATABASE_URL: string;
+  WEBHOOK_ADMIN_USER?: string;
+  WEBHOOK_ADMIN_PASSWORD?: string;
 }
 
 let aiBot: AIBot;
@@ -18,6 +21,80 @@ export default {
     }
 
     const url = new URL(request.url);
+
+    // Webhook setup UI endpoint
+    if (url.pathname === '/webhook-ui' && request.method === 'GET') {
+      // Check Basic Auth
+      const authHeader = request.headers.get('Authorization');
+      const isAuthorized = checkBasicAuth(authHeader, env);
+      
+      if (!isAuthorized) {
+        return new Response('Unauthorized', {
+          status: 401,
+          headers: {
+            'WWW-Authenticate': 'Basic realm="Webhook Setup"'
+          }
+        });
+      }
+
+      // Return HTML page
+      const html = getWebhookUIHTML(`${url.origin}/webhook`, authHeader || '');
+      
+      return new Response(html, {
+        headers: { 'Content-Type': 'text/html; charset=utf-8' }
+      });
+    }
+
+    // API endpoint to set webhook
+    if (url.pathname === '/api/set-webhook' && request.method === 'POST') {
+      // Check Basic Auth
+      const authHeader = request.headers.get('Authorization');
+      const isAuthorized = checkBasicAuth(authHeader, env);
+      
+      if (!isAuthorized) {
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+          status: 401,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+
+      try {
+        const { webhookUrl } = await request.json() as { webhookUrl: string };
+        
+        if (!webhookUrl) {
+          return new Response(JSON.stringify({ 
+            ok: false, 
+            error: 'Webhook URL is required' 
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        const response = await fetch(
+          `https://api.telegram.org/bot${env.API_TELEGRAM}/setWebhook`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ url: webhookUrl })
+          }
+        );
+
+        const result = await response.json();
+        return new Response(JSON.stringify(result), {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      } catch (error: any) {
+        return new Response(JSON.stringify({ 
+          ok: false, 
+          error: error.message 
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    }
 
     // Webhook endpoint for Telegram
     if (url.pathname === '/webhook' && request.method === 'POST') {
@@ -174,4 +251,19 @@ function shouldRespondInGroup(body: any): boolean {
   return false;
 }
 
-
+// Check Basic Authentication
+function checkBasicAuth(authHeader: string | null, env: Env): boolean {
+  // Get credentials from environment or use default
+  const adminUser = env.WEBHOOK_ADMIN_USER || 'admin';
+  const adminPassword = env.WEBHOOK_ADMIN_PASSWORD || 'admin123';
+  
+  if (!authHeader || !authHeader.startsWith('Basic ')) {
+    return false;
+  }
+  
+  const base64Credentials = authHeader.slice(6);
+  const credentials = atob(base64Credentials);
+  const [username, password] = credentials.split(':');
+  
+  return username === adminUser && password === adminPassword;
+}
