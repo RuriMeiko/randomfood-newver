@@ -9,9 +9,17 @@
 
 import type { TelegramMessage } from '../types/telegram';
 import type { DatabaseService } from './database';
+import { EmotionService } from './emotion';
 
 export class ContextBuilderService {
-  constructor(private dbService: DatabaseService) {}
+  private emotionService: EmotionService;
+
+  constructor(
+    private dbService: DatabaseService,
+    emotionService?: EmotionService
+  ) {
+    this.emotionService = emotionService || new EmotionService(dbService);
+  }
 
   /**
    * Build minimal context without schema assumptions
@@ -38,10 +46,15 @@ export class ContextBuilderService {
       hour12: false
     }).format(currentTime);
     
+    // Get emotional context
+    const emotionalContext = await this.emotionService.getEmotionalContext();
+    
     // Build schema-agnostic context
     const context = `
 === CURRENT TIME ===
 ${vietnamTime} (Asia/Ho_Chi_Minh - GMT+7)
+
+=== ${emotionalContext} ===
 
 === CURRENT USER ===
 Name: ${message.from?.first_name || 'Unknown'} ${message.from?.last_name || ''}

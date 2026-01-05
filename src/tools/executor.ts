@@ -6,6 +6,7 @@
  */
 
 import type { DatabaseService } from '../services/database';
+import { EmotionService, type EmotionalSignal } from '../services/emotion';
 import { ToolNames } from './definitions';
 
 export interface ToolCall {
@@ -20,7 +21,14 @@ export interface ToolResult {
 }
 
 export class ToolExecutor {
-  constructor(private dbService: DatabaseService) {}
+  private emotionService: EmotionService;
+
+  constructor(
+    private dbService: DatabaseService,
+    emotionService?: EmotionService
+  ) {
+    this.emotionService = emotionService || new EmotionService(dbService);
+  }
 
   /**
    * Execute a tool call and return the result
@@ -56,6 +64,27 @@ export class ToolExecutor {
               userMessage: context?.userMessage
             }
           );
+          break;
+
+        case ToolNames.ANALYZE_INTERACTION:
+          const signal: EmotionalSignal = {
+            valence: parseFloat(toolCall.args.valence) || 0,
+            intensity: parseFloat(toolCall.args.intensity) || 0,
+            target_emotions: toolCall.args.target_emotions || [],
+            context: toolCall.args.context
+          };
+          
+          const updateResult = await this.emotionService.updateFromInteraction(
+            signal,
+            context?.userTgId
+          );
+          
+          result = {
+            previous_state: updateResult.previous,
+            updated_state: updateResult.updated,
+            changes: updateResult.deltas,
+            message: 'Emotional state updated successfully'
+          };
           break;
 
         default:

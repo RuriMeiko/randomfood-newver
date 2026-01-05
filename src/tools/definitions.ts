@@ -86,13 +86,49 @@ export const executeSqlTool = {
 };
 
 /**
+ * Tool: analyze_interaction
+ * Analyzes user interaction for emotional signals
+ * LLM uses this to express how an interaction affects bot's emotions
+ */
+export const analyzeInteractionTool = {
+  name: 'analyze_interaction',
+  description: 'Analyzes a user interaction and generates emotional signals. Use this to update bot emotional state based on how the interaction made you feel. Returns updated emotional state.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {
+      valence: {
+        type: Type.NUMBER,
+        description: 'Emotional valence: positive (0.0 to 1.0) or negative (-1.0 to 0.0). Example: compliment=0.7, insult=-0.8, neutral=0.0'
+      },
+      intensity: {
+        type: Type.NUMBER,
+        description: 'How strongly you feel about this (0.0 to 1.0). Example: mild=0.3, moderate=0.6, strong=0.9'
+      },
+      target_emotions: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.STRING
+        },
+        description: 'Which emotions are affected. Available: joy, sadness, anger, fear, trust, disgust, affection, playfulness, neediness, hurt, warmth, excitement'
+      },
+      context: {
+        type: Type.STRING,
+        description: 'Brief context about why you feel this way (optional, for logging)'
+      }
+    },
+    required: ['valence', 'intensity', 'target_emotions']
+  }
+};
+
+/**
  * All available tools for the AI agent
  */
 export const allTools = [
   inspectSchemaTool,
   describeTableTool,
   listTablesTool,
-  executeSqlTool
+  executeSqlTool,
+  analyzeInteractionTool
 ];
 
 /**
@@ -102,5 +138,6 @@ export const ToolNames = {
   INSPECT_SCHEMA: 'inspect_schema',
   DESCRIBE_TABLE: 'describe_table',
   LIST_TABLES: 'list_tables',
-  EXECUTE_SQL: 'execute_sql'
+  EXECUTE_SQL: 'execute_sql',
+  ANALYZE_INTERACTION: 'analyze_interaction'
 } as const;

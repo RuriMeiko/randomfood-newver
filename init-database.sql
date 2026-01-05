@@ -55,6 +55,42 @@ CREATE TABLE IF NOT EXISTS name_aliases (
   UNIQUE(owner_user_id, alias_text)
 );
 
+-- Bot Emotional State (Global - One emotional state for the bot)
+-- Emotions are numeric values from 0.0 to 1.0 (neutral = 0.5)
+-- Bot has ONE emotional state affected by ALL interactions
+CREATE TABLE IF NOT EXISTS bot_emotional_state (
+  emotion_name TEXT PRIMARY KEY,
+  value NUMERIC(3,2) NOT NULL CHECK (value >= 0.0 AND value <= 1.0),
+  last_updated TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Initialize default emotions at neutral state (0.5)
+INSERT INTO bot_emotional_state (emotion_name, value) VALUES
+  ('joy', 0.5),
+  ('sadness', 0.5),
+  ('anger', 0.5),
+  ('fear', 0.5),
+  ('trust', 0.5),
+  ('disgust', 0.5),
+  ('affection', 0.5),
+  ('playfulness', 0.5),
+  ('neediness', 0.5),
+  ('hurt', 0.5),
+  ('warmth', 0.5),
+  ('excitement', 0.5)
+ON CONFLICT (emotion_name) DO NOTHING;
+
+-- Interaction Events (audit log for emotion changes)
+CREATE TABLE IF NOT EXISTS interaction_events (
+  id BIGSERIAL PRIMARY KEY,
+  user_tg_id BIGINT NOT NULL,
+  message_text TEXT,
+  valence NUMERIC(3,2) CHECK (valence >= -1.0 AND valence <= 1.0),
+  intensity NUMERIC(3,2) CHECK (intensity >= 0.0 AND intensity <= 1.0),
+  target_emotions TEXT[], -- Array of emotion names affected
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
 -- ==========================================
 -- INDEXES FOR PERFORMANCE
 -- ==========================================
