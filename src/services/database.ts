@@ -350,4 +350,193 @@ export class DatabaseService {
 
     return 'sql_error'; // fallback
   }
+
+  // ==========================================
+  // TOOL METHODS FOR AUTONOMOUS AI AGENT
+  // ==========================================
+
+  /**
+   * Tool: inspect_schema
+   * Returns all tables and their columns from information_schema
+   */
+  async inspectSchema(): Promise<string> {
+    try {
+      const query = `
+        SELECT 
+          table_name,
+          column_name,
+          data_type,
+          is_nullable,
+          column_default
+        FROM information_schema.columns
+        WHERE table_schema = 'public'
+        ORDER BY table_name, ordinal_position;
+      `;
+
+      const result = await this.sql.query(query);
+      
+      // Group by table
+      const tables: Record<string, any[]> = {};
+      for (const row of result) {
+        if (!tables[row.table_name]) {
+          tables[row.table_name] = [];
+        }
+        tables[row.table_name].push({
+          column: row.column_name,
+          type: row.data_type,
+          nullable: row.is_nullable,
+          default: row.column_default
+        });
+      }
+
+      return JSON.stringify({ tables }, null, 2);
+    } catch (error: any) {
+      console.error('❌ Error inspecting schema:', error);
+      return JSON.stringify({ error: error.message }, null, 2);
+    }
+  }
+
+  /**
+   * Tool: describe_table
+   * Returns detailed information about a specific table
+   */
+  async describeTable(tableName: string): Promise<string> {
+    try {
+      // Get column information
+      const columnsQuery = `
+        SELECT 
+          column_name,
+          data_type,
+          is_nullable,
+          column_default,
+          character_maximum_length
+        FROM information_schema.columns
+        WHERE table_schema = 'public' 
+          AND table_name = $1
+        ORDER BY ordinal_position;
+      `;
+
+      // Get foreign key information
+      const fkQuery = `
+        SELECT
+          kcu.column_name,
+          ccu.table_name AS foreign_table_name,
+          ccu.column_name AS foreign_column_name
+        FROM information_schema.table_constraints AS tc
+        JOIN information_schema.key_column_usage AS kcu
+          ON tc.constraint_name = kcu.constraint_name
+        JOIN information_schema.constraint_column_usage AS ccu
+          ON ccu.constraint_name = tc.constraint_name
+        WHERE tc.table_schema = 'public'
+          AND tc.table_name = $1
+          AND tc.constraint_type = 'FOREIGN KEY';
+      `;
+
+      const [columns, foreignKeys] = await Promise.all([
+        this.sql.query(columnsQuery, [tableName]),
+        this.sql.query(fkQuery, [tableName])
+      ]);
+
+      return JSON.stringify({
+        table: tableName,
+        columns,
+        foreignKeys
+      }, null, 2);
+    } catch (error: any) {
+      console.error('❌ Error describing table:', error);
+      return JSON.stringify({ error: error.message }, null, 2);
+    }
+  }
+
+  /**
+   * Tool: list_tables
+   * Returns a simple list of all table names
+   */
+  async listTables(): Promise<string> {
+    try {
+      const query = `
+        SELECT table_name
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
+          AND table_type = 'BASE TABLE'
+        ORDER BY table_name;
+      `;
+
+      const result = await this.sql.query(query);
+      const tables = result.map((row: any) => row.table_name);
+
+      return JSON.stringify({ tables }, null, 2);
+    } catch (error: any) {
+      console.error('❌ Error listing tables:', error);
+      return JSON.stringify({ error: error.message }, null, 2);
+    }
+  }
+
+  /**
+   * Tool: execute_sql (tool-compatible version)
+   * Executes SQL and returns results in tool format
+   */
+  async executeToolSql(query: string, params: any[], context?: SQLExecutionContext): Promise<any> {
+    try {
+      // Only allow safe SELECT, INSERT, UPDATE queries
+      const safeQuery = query.toLowerCase().trim();
+      if (!safeQuery.startsWith('select') &&
+        !safeQuery.startsWith('insert') &&
+        !safeQuery.startsWith('update')) {
+        throw new Error('Unsafe SQL query - only SELECT, INSERT, UPDATE allowed');
+      }
+
+      console.log('🔧 [Tool] Executing SQL:', query, params);
+      const result = await this.sql.query(query, params);
+      console.log('✅ [Tool] SQL executed successfully');
+
+      // Log action (only for INSERT and UPDATE, not SELECT)
+      if (!safeQuery.startsWith('select') && context) {
+        await this.logAction({
+          userId: context.userId,
+          groupId: context.groupId,
+          actionType: this.determineActionType(query),
+          payload: {
+            query,
+            params,
+            result,
+            reason: context.reason,
+            userMessage: context.userMessage,
+            executedAt: new Date().toISOString(),
+            executedViaTool: true
+          }
+        });
+      }
+
+      return {
+        rows: result,
+        rowCount: result.length,
+        query,
+        params
+      };
+
+    } catch (error: any) {
+      console.error('❌ [Tool] SQL execution error:', error);
+
+      // Log failed action
+      if (context) {
+        await this.logAction({
+          userId: context.userId,
+          groupId: context.groupId,
+          actionType: 'sql_error',
+          payload: {
+            query,
+            params,
+            error: error.message,
+            reason: context.reason,
+            userMessage: context.userMessage,
+            executedAt: new Date().toISOString(),
+            executedViaTool: true
+          }
+        });
+      }
+
+      throw error;
+    }
+  }
 }

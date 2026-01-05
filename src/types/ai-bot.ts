@@ -2,8 +2,14 @@
  * AI Bot specific types and interfaces
  */
 
+export interface AIMessage {
+  text: string;
+  delay: string;
+  sticker?: string;
+}
+
 export interface AIResponse {
-  messages?: { text: string; delay: string }[];
+  messages?: AIMessage[];
   intent?: string;
   sqlQuery?: string;
   sqlParams?: any;
@@ -11,7 +17,7 @@ export interface AIResponse {
 }
 
 export interface ProcessMessageResult {
-  messages: { text: string; delay: string }[];
+  messages: AIMessage[];
   intent: string;
   hasSQL: boolean;
 }

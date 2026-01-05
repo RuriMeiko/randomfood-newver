@@ -1,4 +1,4 @@
-import { AIBot, type TelegramMessage } from './ai-bot';
+import { AIBotAutonomous as AIBot, type TelegramMessage } from './ai-bot-autonomous';
 
 export interface Env {
   GEMINI_API_KEY: string;
