@@ -34,8 +34,15 @@ export class ToolExecutor {
    * Execute a tool call and return the result
    */
   async executeTool(toolCall: ToolCall, context?: any): Promise<ToolResult> {
+    const startTime = Date.now();
+    console.log(`\n🔧 [ToolExecutor] ========================================`);
     console.log(`🔧 [ToolExecutor] Executing tool: ${toolCall.name}`);
     console.log(`🔧 [ToolExecutor] Args:`, JSON.stringify(toolCall.args, null, 2));
+    console.log(`🔧 [ToolExecutor] Context:`, {
+      userId: context?.userId,
+      groupId: context?.groupId,
+      userMessage: context?.userMessage?.substring(0, 50)
+    });
 
     try {
       let result: any;
@@ -93,7 +100,15 @@ export class ToolExecutor {
 
       const content = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
 
-      console.log(`✅ [ToolExecutor] Tool executed successfully:`, content.substring(0, 200));
+      const duration = Date.now() - startTime;
+      console.log(`✅ [ToolExecutor] Tool executed successfully in ${duration}ms`);
+      console.log(`📊 [ToolExecutor] Result size: ${content.length} chars`);
+      if (content.length < 300) {
+        console.log(`📄 [ToolExecutor] Full result:`, content);
+      } else {
+        console.log(`📄 [ToolExecutor] Result preview:`, content.substring(0, 300) + '...');
+      }
+      console.log(`🔧 [ToolExecutor] ========================================\n`);
 
       return {
         name: toolCall.name,
@@ -102,7 +117,9 @@ export class ToolExecutor {
       };
 
     } catch (error: any) {
-      console.error(`❌ [ToolExecutor] Tool execution failed:`, error);
+      const duration = Date.now() - startTime;
+      console.error(`❌ [ToolExecutor] Tool execution failed after ${duration}ms:`, error);
+      console.log(`🔧 [ToolExecutor] ========================================\n`);
 
       return {
         name: toolCall.name,

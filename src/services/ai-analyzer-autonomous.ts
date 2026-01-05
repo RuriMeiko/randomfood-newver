@@ -176,6 +176,12 @@ export class AIAnalyzerService {
         }
 
         const content = candidate.content;
+        
+        // 📝 LOG: AI's full response
+        console.log('\n=== AI RESPONSE ===');
+        console.log('Role:', content?.role);
+        console.log('Parts:', JSON.stringify(content?.parts, null, 2));
+        
         const functionCalls = content?.parts?.filter((part: any) => part.functionCall);
 
         // If no function calls, we have a final response
@@ -185,6 +191,9 @@ export class AIAnalyzerService {
           // Extract the text response
           const textPart = content?.parts?.find((part: any) => part.text);
           if (textPart?.text) {
+            console.log('\n📄 [AIAnalyzer] Final text response:');
+            console.log(textPart.text);
+            console.log('\n');
             return this.parseFinalResponse(textPart.text);
           }
 
@@ -196,7 +205,7 @@ export class AIAnalyzerService {
         }
 
         // Execute all function calls
-        console.log(`🔧 [AIAnalyzer] Executing ${functionCalls.length} tool call(s)...`);
+        console.log(`\n🔧 [AIAnalyzer] Executing ${functionCalls.length} tool call(s)...`);
         
         // Add model's response with function calls to history
         if (content && content.parts) {
@@ -215,12 +224,21 @@ export class AIAnalyzerService {
             continue;
           }
           
-          console.log(`🔧 [AIAnalyzer] Tool call: ${fc.name}`);
+          console.log(`\n🔧 [AIAnalyzer] === TOOL CALL: ${fc.name} ===`);
+          console.log('📥 Arguments:', JSON.stringify(fc.args, null, 2));
           
           const result = await this.toolExecutor.executeTool(
             { name: fc.name, args: fc.args || {} },
             toolContext
           );
+
+          console.log('📤 Result:', result.success ? '✅ Success' : '❌ Failed');
+          console.log('📄 Content length:', result.content.length, 'chars');
+          if (result.content.length < 500) {
+            console.log('📄 Full content:', result.content);
+          } else {
+            console.log('📄 Content preview:', result.content.substring(0, 500) + '...');
+          }
 
           toolResults.push({
             functionResponse: {
@@ -236,7 +254,9 @@ export class AIAnalyzerService {
           parts: toolResults
         });
 
-        console.log('✅ [AIAnalyzer] Tool results added to conversation');
+        console.log('\n✅ [AIAnalyzer] Tool results added to conversation');
+        console.log('📊 Conversation history length:', conversationHistory.length, 'messages');
+        console.log('='.repeat(80) + '\n');
 
       } catch (error: any) {
         console.error(`❌ [AIAnalyzer] Error in iteration ${iteration}:`, error);
