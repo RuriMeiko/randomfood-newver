@@ -57,6 +57,7 @@ export default {
 
       try {
         const { webhookUrl } = await request.json() as { webhookUrl: string };
+        console.log(webhookUrl);
         
         if (!webhookUrl) {
           return new Response(JSON.stringify({ 
@@ -78,6 +79,8 @@ export default {
         );
 
         const result = await response.json();
+        console.log(result);
+        
         return new Response(JSON.stringify(result), {
           status: 200,
           headers: { 'Content-Type': 'application/json' }
