@@ -134,7 +134,14 @@ export interface Dice { [key: string]: any }
 export interface Game { [key: string]: any }
 export interface Poll { [key: string]: any }
 export interface Venue { [key: string]: any }
-export interface Location { [key: string]: any }
+export interface Location { 
+  latitude: number;
+  longitude: number;
+  horizontal_accuracy?: number;
+  live_period?: number;
+  heading?: number;
+  proximity_alert_radius?: number;
+}
 export interface MessageAutoDeleteTimerChanged { [key: string]: any }
 export interface Invoice { [key: string]: any }
 export interface SuccessfulPayment { [key: string]: any }

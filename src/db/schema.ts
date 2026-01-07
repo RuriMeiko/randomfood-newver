@@ -11,6 +11,10 @@ export const tgUsers = pgTable('tg_users', {
   tgId: bigint('tg_id', { mode: 'number' }).unique().notNull(),
   tgUsername: text('tg_username'),
   displayName: text('display_name'),
+  latitude: numeric('latitude', { precision: 10, scale: 8 }),
+  longitude: numeric('longitude', { precision: 11, scale: 8 }),
+  locationName: text('location_name'),
+  locationUpdatedAt: timestamp('location_updated_at'),
   createdAt: timestamp('created_at').defaultNow(),
 });
 

@@ -120,8 +120,30 @@ export class AIAnalyzerService {
       groupId: message && message.chat.type !== 'private' 
         ? await this.dbService.getGroupId(message.chat.id) 
         : null,
-      userMessage: message?.text
+      userMessage: message?.text,
+      userTgId: message?.from?.id
     };
+
+    // Get user location for Google Maps context
+    let userLocation: { latitude: number; longitude: number } | null = null;
+    if (toolContext.userId) {
+      try {
+        const locationData = await this.dbService.executeSqlQuery(
+          `SELECT latitude, longitude FROM tg_users WHERE id = $1`,
+          [toolContext.userId.toString()],
+          { reason: 'Get user location for Maps context', userMessage: message?.text }
+        );
+        if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
+          userLocation = {
+            latitude: parseFloat(locationData.rows[0].latitude),
+            longitude: parseFloat(locationData.rows[0].longitude)
+          };
+          console.log(`📍 [AIAnalyzer] User location found: (${userLocation.latitude}, ${userLocation.longitude})`);
+        }
+      } catch (error) {
+        console.warn('⚠️ [AIAnalyzer] Failed to get user location:', error);
+      }
+    }
 
     while (iteration < MAX_ITERATIONS) {
       iteration++;
@@ -150,24 +172,72 @@ export class AIAnalyzerService {
         
         let result;
         if (this.apiKeyManager) {
+          // Build config with Google Maps location context if available
+          const config: any = {
+            thinkingConfig: {
+              thinkingBudget: 8000
+            },
+            safetySettings: this.getSafetyConfig(),
+            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            tools: [
+              { functionDeclarations: allTools },  // Custom function tools
+              { googleSearch: {} },                // Google Search grounding
+              { googleMaps: {} }                   // Google Maps grounding
+            ]
+          };
+
+          // Add location context for Google Maps if available
+          if (userLocation) {
+            config.toolConfig = {
+              retrievalConfig: {
+                latLng: {
+                  latitude: userLocation.latitude,
+                  longitude: userLocation.longitude
+                }
+              }
+            };
+          }
+
           // Use ApiKeyManager with automatic retry
           result = await this.apiKeyManager.executeWithRetry(
             (client) => client.models.generateContent({
               model: 'gemini-flash-latest',
-              config: {
-                thinkingConfig: {
-                  thinkingBudget: 0
-                },
-                safetySettings: this.getSafetyConfig(),
-                systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
-                tools: [{ functionDeclarations: allTools }]
-              },
+              config,
               contents: conversationHistory
             })
           );
         } else {
           // Direct call without key rotation
-          result = await generateContent();
+          const config: any = {
+            thinkingConfig: {
+              thinkingBudget: 8000
+            },
+            safetySettings: this.getSafetyConfig(),
+            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            tools: [
+              { functionDeclarations: allTools },  // Custom function tools
+              { googleSearch: {} },                // Google Search grounding
+              { googleMaps: {} }                   // Google Maps grounding
+            ]
+          };
+
+          // Add location context for Google Maps if available
+          if (userLocation) {
+            config.toolConfig = {
+              retrievalConfig: {
+                latLng: {
+                  latitude: userLocation.latitude,
+                  longitude: userLocation.longitude
+                }
+              }
+            };
+          }
+
+          result = await this.genAI.models.generateContent({
+            model: 'gemini-flash-latest',
+            config,
+            contents: conversationHistory
+          });
         }
 
         const candidate = result?.candidates?.[0];
@@ -188,8 +258,8 @@ export class AIAnalyzerService {
         if (!functionCalls || functionCalls.length === 0) {
           console.log('✅ [AIAnalyzer] Final response received (no more tool calls)');
           
-          // Extract the text response
-          const textPart = content?.parts?.find((part: any) => part.text);
+          // Extract the text response (skip thinking parts)
+          const textPart = content?.parts?.find((part: any) => part.text && !part.thought);
           if (textPart?.text) {
             console.log('\n📄 [AIAnalyzer] Final text response:');
             console.log(textPart.text);
@@ -280,18 +350,63 @@ export class AIAnalyzerService {
    */
   private parseFinalResponse(text: string): AIResponse {
     try {
-      // Try to parse as JSON first
-      const parsed = JSON.parse(text);
+      // Clean the text first - remove any thinking process or metadata that leaked through
+      let cleanedText = text.trim();
+      
+      // Remove numbered steps like "4. **Read Updated State:**"
+      cleanedText = cleanedText.replace(/^\d+\.\s+\*\*.+?\*\*:?[\s\S]*?(?=\{|\d+\.|$)/gm, '');
+      
+      // Remove markdown headers and thinking process markers
+      cleanedText = cleanedText.replace(/^#+\s+.+$/gm, '');
+      cleanedText = cleanedText.replace(/\*\*(Read Updated State|Select Response Style|Formulate Response|Final JSON Construction|Draft Response|Emotional State):\*\*/gi, '');
+      
+      // Extract JSON if wrapped in markdown code blocks
+      const jsonMatch = cleanedText.match(/```(?:json)?\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        cleanedText = jsonMatch[1];
+      }
+      
+      // Find the first valid JSON object
+      const jsonStartIndex = cleanedText.indexOf('{');
+      if (jsonStartIndex !== -1) {
+        cleanedText = cleanedText.substring(jsonStartIndex);
+        
+        // Try to extract just the JSON object (handle trailing text)
+        let braceCount = 0;
+        let jsonEndIndex = -1;
+        for (let i = 0; i < cleanedText.length; i++) {
+          if (cleanedText[i] === '{') braceCount++;
+          if (cleanedText[i] === '}') {
+            braceCount--;
+            if (braceCount === 0) {
+              jsonEndIndex = i + 1;
+              break;
+            }
+          }
+        }
+        
+        if (jsonEndIndex !== -1) {
+          cleanedText = cleanedText.substring(0, jsonEndIndex);
+        }
+      }
+      
+      console.log('🧹 [AIAnalyzer] Cleaned response text:', cleanedText.substring(0, 200));
+      
+      // Try to parse as JSON
+      const parsed = JSON.parse(cleanedText);
       
       return {
-        messages: parsed.messages || [{ text: text, delay: '1000' }],
+        messages: parsed.messages || [{ text: cleanedText, delay: '1000' }],
         intent: parsed.type || 'reply'
       };
-    } catch {
-      // If not JSON, treat as plain text
+    } catch (error) {
+      console.error('❌ [AIAnalyzer] Failed to parse response:', error);
+      console.error('📄 [AIAnalyzer] Raw text:', text);
+      
+      // If parsing fails completely, return error message
       return {
-        messages: [{ text: text, delay: '1000' }],
-        intent: 'reply'
+        messages: [{ text: 'Xin lỗi, em bị lỗi rồi 🥺', delay: '1000' }],
+        intent: 'error'
       };
     }
   }

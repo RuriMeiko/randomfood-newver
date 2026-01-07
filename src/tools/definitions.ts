@@ -121,6 +121,20 @@ export const analyzeInteractionTool = {
 };
 
 /**
+ * Tool: get_user_location
+ * Gets user's saved location for Google Maps queries
+ */
+export const getUserLocationTool = {
+  name: 'get_user_location',
+  description: 'Gets the user\'s saved location (latitude, longitude) if available. Use this BEFORE Google Maps queries to provide location context. If user has no location, ask them to share their location.',
+  parameters: {
+    type: Type.OBJECT,
+    properties: {},
+    required: []
+  }
+};
+
+/**
  * All available tools for the AI agent
  */
 export const allTools = [
@@ -128,7 +142,8 @@ export const allTools = [
   describeTableTool,
   listTablesTool,
   executeSqlTool,
-  analyzeInteractionTool
+  analyzeInteractionTool,
+  getUserLocationTool
 ];
 
 /**
@@ -139,5 +154,6 @@ export const ToolNames = {
   DESCRIBE_TABLE: 'describe_table',
   LIST_TABLES: 'list_tables',
   EXECUTE_SQL: 'execute_sql',
-  ANALYZE_INTERACTION: 'analyze_interaction'
+  ANALYZE_INTERACTION: 'analyze_interaction',
+  GET_USER_LOCATION: 'get_user_location'
 } as const;

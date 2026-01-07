@@ -94,6 +94,38 @@ export class ToolExecutor {
           };
           break;
 
+        case ToolNames.GET_USER_LOCATION:
+          if (!context?.userId) {
+            result = {
+              has_location: false,
+              message: 'User ID not available'
+            };
+          } else {
+            const locationData = await this.dbService.executeSqlQuery(
+              `SELECT latitude, longitude, location_name, location_updated_at 
+               FROM tg_users WHERE id = $1`,
+              [context.userId.toString()],
+              { reason: 'Get user location for Maps query', userMessage: context?.userMessage }
+            );
+            
+            if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
+              result = {
+                has_location: true,
+                latitude: parseFloat(locationData.rows[0].latitude),
+                longitude: parseFloat(locationData.rows[0].longitude),
+                location_name: locationData.rows[0].location_name,
+                updated_at: locationData.rows[0].location_updated_at,
+                message: 'User location found'
+              };
+            } else {
+              result = {
+                has_location: false,
+                message: 'User has not shared location yet. Ask them to share their location via Telegram.'
+              };
+            }
+          }
+          break;
+
         default:
           throw new Error(`Unknown tool: ${toolCall.name}`);
       }

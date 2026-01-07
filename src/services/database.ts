@@ -171,6 +171,35 @@ export class DatabaseService {
     }
   }
 
+  /**
+   * Save user location from Telegram location message
+   * @param message - Telegram message with location
+   */
+  async saveUserLocation(message: TelegramMessage) {
+    try {
+      if (!message.location || !message.from?.id) {
+        console.warn('⚠️ No location data or user ID in message');
+        return;
+      }
+
+      const { latitude, longitude } = message.location;
+      
+      await this.executeSqlQuery(
+        `UPDATE tg_users 
+         SET latitude = $1, 
+             longitude = $2,
+             location_updated_at = NOW()
+         WHERE tg_id = $3`,
+        [latitude.toString(), longitude.toString(), message.from.id.toString()],
+        { reason: 'Save user location from Telegram', userMessage: 'Location shared' }
+      );
+
+      console.log(`📍 Saved location for user ${message.from.id}: (${latitude}, ${longitude})`);
+    } catch (error) {
+      console.error('❌ Failed to save user location:', error);
+    }
+  }
+
   async getCurrentDebts(groupId: number | null) {
     return await this.db
       .select({

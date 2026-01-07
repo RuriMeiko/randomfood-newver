@@ -48,6 +48,16 @@ export class AIBotAutonomous {
 
       const telegramApi = new TelegramApi(telegramToken);
       
+      // 0. Handle location message - save location but let AI respond
+      if (message.location) {
+        console.log('📍 [AIBotAutonomous] Location message received');
+        await this._dbService.ensureUserAndGroup(message);
+        await this._dbService.saveUserLocation(message);
+        
+        // Override message text to let AI know user shared location
+        message.text = '[User shared their location]';
+      }
+      
       // 1. Start parallel operations immediately
       console.log('⌨️ [AIBotAutonomous] Step 1: Starting parallel operations...');
       
