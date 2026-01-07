@@ -5,11 +5,24 @@
  * - No hardcoded database schema
  * - Only provides observable facts: current user, time, recent messages
  * - Database structure is discovered via tools, not provided in context
+ * - Returns structured format for direct Gemini API usage
  */
 
 import type { TelegramMessage } from '../types/telegram';
 import type { DatabaseService } from './database';
 import { EmotionService } from './emotion';
+import { AUTONOMOUS_AGENT_PROMPT } from '../prompts/autonomous-agent';
+
+export interface ContextResult {
+  systemInstruction: string;
+  conversationHistory: any[];
+  metadata: {
+    userId: number;
+    groupId: number | null;
+    currentTime: string;
+    chatType: string;
+  };
+}
 
 export class ContextBuilderService {
   private emotionService: EmotionService;
@@ -22,45 +35,48 @@ export class ContextBuilderService {
   }
 
   /**
-   * Build minimal context without schema assumptions
-   * Optimized to match system prompt structure
+   * Build complete context with system instruction + conversation history
+   * Returns structured format ready for Gemini API
    */
-  async buildContext(message: TelegramMessage): Promise<string> {
-    const userId = await this.dbService.getUserId(message.from?.id || 0);
-    const groupId = message.chat.type === 'private' 
-      ? null 
-      : await this.dbService.getGroupId(message.chat.id);
+  async buildContext(message: TelegramMessage): Promise<ContextResult> {
+    console.log('\n📦 [ContextBuilder] ============================================');
+    console.log('📦 [ContextBuilder] BUILDING CONTEXT FOR GEMINI API');
+    console.log('📦 [ContextBuilder] ============================================');
 
-    // Get recent messages
-    const recentMessages = await this.dbService.getRecentMessagesByChatId(message.chat.id);
-    
-    // Get group members if in group
-    let groupMembersInfo = '';
-    if (message.chat.type !== 'private') {
-      const members = await this.dbService.getGroupMembers(message.chat.id);
-      if (members.length > 0) {
-        groupMembersInfo = `\n\n=== GROUP MEMBERS (Who are in this chat) ===\n${members.map(m => 
-          `- ${m.displayName || m.tgUsername || `User ${m.tgId}`} (@${m.tgUsername || 'no_username'})`
-        ).join('\n')}\n\nUse these names when user mentions someone (e.g., "Long", "Hùng"). Check DB to find user ID.`;
-      }
+    console.log('👤 [ContextBuilder] Step 1: Getting user and group IDs...');
+    const userId = await this.dbService.getUserId(message.from?.id || 0);
+    const groupId = message.chat.type === 'private'
+      ? null
+      : await this.dbService.getGroupId(message.chat.id);
+    console.log(`✅ [ContextBuilder] User ID: ${userId}, Group ID: ${groupId || 'N/A (private chat)'}`);
+
+    // Determine pronoun usage based on Telegram ID
+    const tgUserId = message.from?.id || 0;
+    const specialUserIds = [1775446945, 942231869, 6048017680];
+    const isSpecialUser = specialUserIds.includes(tgUserId);
+    let pronounInstruction = '';
+    if (isSpecialUser) {
+      pronounInstruction = `
+=== SPECIAL RELATIONSHIP OVERRIDE (CRITICAL) ===
+User ID ${tgUserId} is a VIP/Special Person.
+- **PRONOUNS:** You MUST refer to yourself as "em" and the user as "anh".
+- **TONE ADJUSTMENT:** Even if you are Gen Z/Chaotic, keep a layer of sweetness/softness for this user.
+- **EXAMPLES:** "dạ anh", "anh ơi", "bé biết rùi nè anh".
+`;
+      console.log('🎭 [ContextBuilder] Special user detected - using em/anh pronouns');
+    } else {
+      pronounInstruction = `
+=== SOCIAL DYNAMICS (ADAPTIVE PRONOUNS) ===
+Observe the conversation history to mirror the user's vibe:
+- If User says "anh/em" -> You say "anh/em".
+- If User says "mày/tao" -> You say "tao/mày" (be sassy).
+- If Unsure/Default -> You say "tui" and call user "bà" or "ông".
+`;
+      console.log('🎭 [ContextBuilder] Regular user - pronouns based on conversation style');
     }
-    
-    // Get replied message if this is a reply
-    let repliedMessageInfo = '';
-    if (message.reply_to_message) {
-      const repliedMsg = await this.dbService.getMessageByTelegramId(
-        message.chat.id,
-        message.reply_to_message.message_id
-      );
-      
-      if (repliedMsg) {
-        repliedMessageInfo = `\n\n=== 🔁 USER IS REPLYING TO ===\nFrom: ${repliedMsg.senderName}\nMessage: "${repliedMsg.messageText}"\n\n👉 User's current message is a REPLY to the above. Consider this context.`;
-      } else if (message.reply_to_message.text) {
-        repliedMessageInfo = `\n\n=== 🔁 USER IS REPLYING TO ===\nMessage: "${message.reply_to_message.text}"\n\n👉 User is replying to this message.`;
-      }
-    }
-    
+
     // Get current time in Vietnam timezone
+    console.log('⏰ [ContextBuilder] Step 2: Getting current time...');
     const currentTime = new Date();
     const vietnamTime = new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
@@ -72,100 +88,148 @@ export class ContextBuilderService {
       second: '2-digit',
       hour12: false
     }).format(currentTime);
-    
-    // Get emotional context
-    const emotionalContext = await this.emotionService.getEmotionalContext();
-    
-    // Pre-load database schema
-    const schemaInfo = await this.dbService.listTables();
-    
-    // Build optimized context matching system prompt structure
-    const context = `
-=== ⏰ CURRENT TIME ===
-${vietnamTime} (Vietnam Time Zone)
+    console.log(`✅ [ContextBuilder] Time: ${vietnamTime}`);
 
-=== 💭 YOUR CURRENT EMOTIONAL STATE ===
+    // Get emotional context
+    console.log('💭 [ContextBuilder] Step 3: Getting emotional state...');
+    const emotionalContext = await this.emotionService.getEmotionalContext();
+    console.log(`✅ [ContextBuilder] Emotion: ${emotionalContext.substring(0, 100)}...`);
+
+    // Get group members if in group
+    let groupMembersInfo = '';
+    if (message.chat.type !== 'private') {
+      console.log('👥 [ContextBuilder] Step 4: Getting group members...');
+      const members = await this.dbService.getGroupMembers(message.chat.id);
+      console.log(`✅ [ContextBuilder] Found ${members.length} group members`);
+      if (members.length > 0) {
+        groupMembersInfo = `\n\n=== 👥 GROUP MEMBERS ===\n${members.map(m =>
+          `- ${m.displayName || m.tgUsername || `User ${m.tgId}`} (@${m.tgUsername || 'no_username'})`
+        ).join('\n')}\n\n💡 Use these names when user mentions someone. Query DB to find user_id.`;
+      }
+    }
+
+    // Get replied message if this is a reply
+    let repliedMessageInfo = '';
+    if (message.reply_to_message) {
+      console.log('🔁 [ContextBuilder] Step 5: Getting replied message context...');
+      const repliedMsg = await this.dbService.getMessageByTelegramId(
+        message.chat.id,
+        message.reply_to_message.message_id
+      );
+
+      if (repliedMsg) {
+        console.log(`✅ [ContextBuilder] Found replied message from ${repliedMsg.senderName}`);
+        repliedMessageInfo = `\n\n=== 🔁 REPLYING TO ===\nFrom: ${repliedMsg.senderName}\nMessage: "${repliedMsg.messageText}"\n\n👉 User's message is a REPLY to above.`;
+      } else if (message.reply_to_message.text) {
+        console.log(`✅ [ContextBuilder] Using inline replied message`);
+        repliedMessageInfo = `\n\n=== 🔁 REPLYING TO ===\nMessage: "${message.reply_to_message.text}"`;
+      }
+    }
+
+    // Pre-load database schema
+    console.log('🗄️ [ContextBuilder] Step 6: Loading database schema...');
+    const schemaInfo = await this.dbService.listTables();
+    console.log(`✅ [ContextBuilder] Database schema loaded`);
+
+    // Build system instruction with current context
+    console.log('📝 [ContextBuilder] Step 7: Building system instruction...');
+    const contextualSystemPrompt = `${AUTONOMOUS_AGENT_PROMPT}${pronounInstruction}
+
+=== ⏰ CURRENT TIME ===
+${vietnamTime} (Vietnam)
+
+=== 💭 EMOTIONAL STATE ===
 ${emotionalContext}
 
 === 👤 CURRENT USER ===
 Name: ${message.from?.first_name || 'Unknown'} ${message.from?.last_name || ''}
-Telegram ID: ${message.from?.id || 0}
-Database User ID: ${userId}
+Telegram ID: ${message.from?.id || 0} ${isSpecialUser ? '⭐ (SPECIAL - use em/anh)' : ''}
+DB User ID: ${userId}
 Username: @${message.from?.username || 'none'}
 
-=== 💬 CURRENT CHAT ===
+=== 💬 CHAT INFO ===
 Type: ${message.chat.type}
-${message.chat.type !== 'private' ? `Group Name: ${message.chat.title}` : ''}
+${message.chat.type !== 'private' ? `Group: ${message.chat.title}` : ''}
 Chat ID: ${message.chat.id}
-${groupId ? `Database Group ID: ${groupId}` : ''}${groupMembersInfo}${repliedMessageInfo}
+${groupId ? `DB Group ID: ${groupId}` : ''}${groupMembersInfo}${repliedMessageInfo}
 
-=== 🗄️ DATABASE TABLES (Available) ===
+=== 🗄️ DATABASE TABLES ===
 ${schemaInfo}
 
-💡 Use tools: describe_table(name) for columns, execute_sql() for queries.
+💡 Use tools: describe_table(name), execute_sql() for queries.`;
+    console.log(`✅ [ContextBuilder] System instruction length: ${contextualSystemPrompt.length} chars`);
+    console.log(`🎭 [ContextBuilder] Pronoun mode: ${isSpecialUser ? 'em/anh (special user)' : 'adaptive (based on user style)'}`);
 
-=== 📚 CONVERSATION SUMMARY ===
-Total messages loaded: ${recentMessages.length}
-Recent 5 messages preview:
-${recentMessages.slice(-5).map(msg => {
-  const msgTime = msg.createdAt ? new Intl.DateTimeFormat('vi-VN', {
-    timeZone: 'Asia/Ho_Chi_Minh',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false
-  }).format(new Date(msg.createdAt)) : '??:??';
-  
-  return `[${msgTime}] ${msg.isAI ? 'Mây' : msg.senderName}: ${msg.messageText.substring(0, 80)}${msg.messageText.length > 80 ? '...' : ''}`;
-}).join('\n')}
+    // Build conversation history from DB (in Gemini format)
+    console.log('💬 [ContextBuilder] Step 8: Building conversation history...');
+    const conversationHistory = await this.buildConversationHistory(message);
+    console.log(`✅ [ContextBuilder] Conversation history: ${conversationHistory.length} messages`);
 
-⚠️ Full conversation history is in message format (role: user/model) sent separately.
+    console.log('\n✅ [ContextBuilder] ============================================');
+    console.log('✅ [ContextBuilder] CONTEXT BUILD COMPLETE!');
+    console.log('✅ [ContextBuilder] ============================================');
+    console.log(`📊 [ContextBuilder] Summary:`);
+    console.log(`   - System instruction: ${contextualSystemPrompt.length} chars`);
+    console.log(`   - Conversation messages: ${conversationHistory.length}`);
+    console.log(`   - User ID: ${userId}`);
+    console.log(`   - Group ID: ${groupId || 'N/A'}`);
+    console.log(`   - Chat type: ${message.chat.type}`);
+    console.log(`   - Pronouns: ${isSpecialUser ? 'em/anh (special user ⭐)' : 'adaptive (tui/bà or mày/tao)'}`);
+    console.log('\n');
 
-=== 🎯 YOUR MISSION ===
-1. Feel the user's message impact on your emotions → use analyze_interaction if needed
-2. Need data? → use inspect/execute_sql tools
-3. Respond naturally with your current emotional state
-4. Output MULTIPLE messages if natural (like real texting!)
-   - Example: ["oke anh", "để em check nha", "đợi tý đi"]
-   - Don't force everything into one long message
-5. NO periods (.) at end of messages
-`;
-    
-    return context;
+    return {
+      systemInstruction: contextualSystemPrompt,
+      conversationHistory,
+      metadata: {
+        userId,
+        groupId,
+        currentTime: vietnamTime,
+        chatType: message.chat.type
+      }
+    };
   }
 
   /**
-   * Build conversation history as message format for AI
+   * Build conversation history from DB in Gemini format
+   * Returns array ready for Gemini API
    */
   async buildConversationHistory(message: TelegramMessage): Promise<any[]> {
+    console.log('   📚 [ContextBuilder.History] Fetching recent messages from DB...');
     const recentMessages = await this.dbService.getRecentMessagesByChatId(message.chat.id);
-    
-    // Convert to Gemini message format with proper roles
+    console.log(`   📚 [ContextBuilder.History] Found ${recentMessages.length} messages in DB`);
+
+    // Convert to Gemini message format
     const history: any[] = [];
-    
-    for (const msg of recentMessages.slice(-20)) { // Last 20 messages for context
+
+    console.log(`   📚 [ContextBuilder.History] Converting last 20 messages to Gemini format...`);
+    for (const msg of recentMessages.slice(-20)) { // Last 20 messages
       const role = msg.isAI ? 'model' : 'user';
-      const senderName = msg.isAI ? '' : `${msg.senderName}: `;
-      
+
+      // In group chats, prefix with sender name for context
+      const senderPrefix = (!msg.isAI && message.chat.type !== 'private')
+        ? `${msg.senderName}: `
+        : '';
+
       history.push({
         role,
-        parts: [{ text: `${senderName}${msg.messageText}` }]
+        parts: [{ text: `${senderPrefix}${msg.messageText}` }]
       });
     }
-    
+    console.log(`   📚 [ContextBuilder.History] Converted ${history.length} messages`);
+
+    // Add current user message at the end
+    console.log(`   📚 [ContextBuilder.History] Adding current user message...`);
+    const currentSenderPrefix = message.chat.type !== 'private'
+      ? `${message.from?.first_name || 'User'}: `
+      : '';
+
+    history.push({
+      role: 'user',
+      parts: [{ text: `${currentSenderPrefix}${message.text || ''}` }]
+    });
+    console.log(`   ✅ [ContextBuilder.History] Total messages in history: ${history.length}`);
+
     return history;
   }
 
-  /**
-   * Build minimal context for private chat
-   */
-  async buildPrivateContext(message: TelegramMessage): Promise<string> {
-    return this.buildContext(message);
-  }
-
-  /**
-   * Build minimal context for group chat
-   */
-  async buildGroupContext(message: TelegramMessage): Promise<string> {
-    return this.buildContext(message);
-  }
 }

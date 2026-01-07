@@ -75,20 +75,13 @@ export class AIBotAutonomous {
       await this._dbService.saveUserMessage(message);
       console.log('✅ [AIBotAutonomous] User message saved');
 
-      // 2. Build schema-agnostic context
-      console.log('🧠 [AIBotAutonomous] Step 2: Building context (schema-agnostic)...');
-      const context = await this._contextBuilder.buildContext(message);
-      const conversationHistory = await this._contextBuilder.buildConversationHistory(message);
-      console.log('📄 [AIBotAutonomous] Context built');
-
-      // 3. Execute autonomous agent with tool calling loop
-      console.log('🎯 [AIBotAutonomous] Step 3: Running autonomous agent...');
+      // 2. Execute autonomous agent with context builder
+      console.log('🎯 [AIBotAutonomous] Step 2: Running autonomous agent with context builder...');
       const aiResponse = await this._aiAnalyzer.analyzeAndExecuteWithMessages(
         message.text || "",
-        context,
+        this._contextBuilder,  // Pass contextBuilder instance, not context string
         message,
-        ctx,
-        conversationHistory
+        ctx
       );
       console.log('🔍 [AIBotAutonomous] Agent response:', {
         intent: aiResponse.intent,
@@ -168,13 +161,10 @@ export class AIBotAutonomous {
       await this._dbService.ensureUserAndGroup(message);
       await this._dbService.saveUserMessage(message);
 
-      // 2. Build context
-      const context = await this._contextBuilder.buildContext(message);
-
-      // 3. Run autonomous agent
+      // 2. Run autonomous agent with context builder
       const aiResponse = await this._aiAnalyzer.analyzeAndExecute(
         message.text || "",
-        context,
+        this._contextBuilder,  // Pass contextBuilder instance
         message
       );
 

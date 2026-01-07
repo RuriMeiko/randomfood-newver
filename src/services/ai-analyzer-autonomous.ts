@@ -21,6 +21,7 @@ import { allTools } from '../tools';
 import { ToolExecutor } from '../tools/executor';
 import { AUTONOMOUS_AGENT_PROMPT } from '../prompts/autonomous-agent';
 import { ApiKeyManager } from './api-key-manager';
+import type { ContextResult } from './context-builder-autonomous';
 
 export class AIAnalyzerService {
   private genAI: GoogleGenAI | any;
@@ -61,7 +62,7 @@ export class AIAnalyzerService {
    */
   async analyzeAndExecuteWithMessages(
     userMessage: string,
-    context: string,
+    contextBuilder: any, // ContextBuilderService instance
     message?: TelegramMessage,
     ctx?: ExecutionContext,
     conversationHistory?: any[]
@@ -76,22 +77,19 @@ export class AIAnalyzerService {
       const requestType = await this.detectRequestType(userMessage);
       console.log(`🎯 [AIAnalyzer] Detected request type: ${requestType}`);
 
-      // Build the initial prompt with context
-      const fullPrompt = this.buildPromptWithContext(userMessage, context);
-
       let response: AIResponse;
 
       // Route to appropriate bot based on request type
       switch (requestType) {
         case 'search':
-          response = await this.handleWithGoogleSearch(fullPrompt, message, conversationHistory);
+          response = await this.handleWithGoogleSearch(contextBuilder, message);
           break;
         case 'places':
-          response = await this.handleWithGoogleMaps(fullPrompt, message, conversationHistory);
+          response = await this.handleWithGoogleMaps(contextBuilder, message);
           break;
         case 'custom':
         default:
-          response = await this.toolCallingLoop(fullPrompt, message, conversationHistory);
+          response = await this.toolCallingLoop(contextBuilder, message);
           break;
       }
 
@@ -169,26 +167,35 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    * Tool calling loop with Gemini function calling
    */
   private async toolCallingLoop(
-    prompt: string,
-    message?: TelegramMessage,
-    existingHistory?: any[]
+    contextBuilder: any, // ContextBuilderService
+    message?: TelegramMessage
   ): Promise<AIResponse> {
     const MAX_ITERATIONS = 10;
     let iteration = 0;
 
-    // Initialize conversation history with existing messages if provided
-    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
-      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
-      : [{ role: 'user', parts: [{ text: prompt }] }];
+    // Build context with system instruction + conversation history
+    console.log('\n🔧 [AIAnalyzer] ============================================');
+    console.log('🔧 [AIAnalyzer] CALLING CONTEXT BUILDER');
+    console.log('🔧 [AIAnalyzer] ============================================\n');
+    const context: ContextResult = await contextBuilder.buildContext(message);
     
-    console.log(`📚 [AIAnalyzer] Conversation history: ${conversationHistory.length} messages`);
+    // Use conversation history from context builder (already in Gemini format)
+    const conversationHistory: any[] = context.conversationHistory;
+    
+    console.log('\n🔧 [AIAnalyzer] ============================================');
+    console.log('🔧 [AIAnalyzer] CONTEXT RECEIVED FROM BUILDER');
+    console.log('🔧 [AIAnalyzer] ============================================');
+    console.log(`📊 [AIAnalyzer] System instruction: ${context.systemInstruction.length} chars`);
+    console.log(`📊 [AIAnalyzer] Conversation messages: ${conversationHistory.length}`);
+    console.log(`📊 [AIAnalyzer] User ID: ${context.metadata.userId}`);
+    console.log(`📊 [AIAnalyzer] Group ID: ${context.metadata.groupId || 'N/A'}`);
+    console.log(`📊 [AIAnalyzer] Chat type: ${context.metadata.chatType}`);
+    console.log('🔧 [AIAnalyzer] ============================================\n');
 
     // Context for tool execution
     const toolContext = {
-      userId: message ? await this.dbService.getUserId(message.from?.id || 0) : undefined,
-      groupId: message && message.chat.type !== 'private' 
-        ? await this.dbService.getGroupId(message.chat.id) 
-        : null,
+      userId: context.metadata.userId,
+      groupId: context.metadata.groupId,
       userMessage: message?.text,
       userTgId: message?.from?.id
     };
@@ -241,17 +248,26 @@ Reply with ONLY ONE WORD: search, places, or custom`;
         
         let result;
         if (this.apiKeyManager) {
-          // Build config with custom function tools only
+          // Build config with system instruction from context
           const config: any = {
             thinkingConfig: {
               thinkingBudget: -1  // Disable thinking mode - output JSON directly
             },
             safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            systemInstruction: [{ text: context.systemInstruction }],
             tools: [
               { functionDeclarations: allTools }  // Custom function tools only
             ]
           };
+
+          console.log('\n🚀 [AIAnalyzer] ============================================');
+          console.log('🚀 [AIAnalyzer] SENDING TO GEMINI API');
+          console.log('🚀 [AIAnalyzer] ============================================');
+          console.log(`📤 [AIAnalyzer] Model: gemini-flash-latest`);
+          console.log(`📤 [AIAnalyzer] System instruction: ${config.systemInstruction[0].text.length} chars`);
+          console.log(`📤 [AIAnalyzer] Conversation history: ${conversationHistory.length} messages`);
+          console.log(`📤 [AIAnalyzer] Tools available: ${allTools.length}`);
+          console.log('🚀 [AIAnalyzer] ============================================\n');
 
           // Use ApiKeyManager with automatic retry
           result = await this.apiKeyManager.executeWithRetry(
@@ -268,7 +284,7 @@ Reply with ONLY ONE WORD: search, places, or custom`;
               thinkingBudget: -1  // Disable thinking mode - output JSON directly
             },
             safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            systemInstruction: [{ text: context.systemInstruction }],
             tools: [
               { functionDeclarations: allTools }  // Custom function tools only
             ]
@@ -416,15 +432,13 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    * Handle request with Google Search grounding
    */
   private async handleWithGoogleSearch(
-    prompt: string,
-    message?: TelegramMessage,
-    existingHistory?: any[]
+    contextBuilder: any,
+    message?: TelegramMessage
   ): Promise<AIResponse> {
     console.log('🔍 [AIAnalyzer] Using Google Search bot...');
 
-    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
-      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
-      : [{ role: 'user', parts: [{ text: prompt }] }];
+    const context: ContextResult = await contextBuilder.buildContext(message);
+    const conversationHistory: any[] = context.conversationHistory;
 
     try {
       const result = await this.apiKeyManager!.executeWithRetry(
@@ -433,7 +447,7 @@ Reply with ONLY ONE WORD: search, places, or custom`;
           config: {
             thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
             safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            systemInstruction: [{ text: context.systemInstruction }],
             tools: [{ googleSearch: {} }]
           },
           contents: conversationHistory
@@ -464,44 +478,39 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    * Handle request with Google Maps grounding
    */
   private async handleWithGoogleMaps(
-    prompt: string,
-    message?: TelegramMessage,
-    existingHistory?: any[]
+    contextBuilder: any,
+    message?: TelegramMessage
   ): Promise<AIResponse> {
     console.log('🗺️ [AIAnalyzer] Using Google Maps bot...');
 
+    const context: ContextResult = await contextBuilder.buildContext(message);
+    const conversationHistory: any[] = context.conversationHistory;
+
     // Get user location
     let userLocation: { latitude: number; longitude: number } | null = null;
-    if (message) {
-      const userId = await this.dbService.getUserId(message.from?.id || 0);
-      if (userId) {
-        try {
-          const locationData = await this.dbService.executeSqlQuery(
-            `SELECT latitude, longitude FROM tg_users WHERE id = $1`,
-            [userId.toString()],
-            { reason: 'Get user location for Maps', userMessage: message.text }
-          );
-          if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
-            userLocation = {
-              latitude: parseFloat(locationData.rows[0].latitude),
-              longitude: parseFloat(locationData.rows[0].longitude)
-            };
-          }
-        } catch (error) {
-          console.warn('⚠️ [AIAnalyzer] Failed to get location:', error);
+    if (context.metadata.userId) {
+      try {
+        const locationData = await this.dbService.executeSqlQuery(
+          `SELECT latitude, longitude FROM tg_users WHERE id = $1`,
+          [context.metadata.userId.toString()],
+          { reason: 'Get user location for Maps', userMessage: message?.text }
+        );
+        if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
+          userLocation = {
+            latitude: parseFloat(locationData.rows[0].latitude),
+            longitude: parseFloat(locationData.rows[0].longitude)
+          };
         }
+      } catch (error) {
+        console.warn('⚠️ [AIAnalyzer] Failed to get location:', error);
       }
     }
-
-    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
-      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
-      : [{ role: 'user', parts: [{ text: prompt }] }];
 
     try {
       const config: any = {
         thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
         safetySettings: this.getSafetyConfig(),
-        systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+        systemInstruction: [{ text: context.systemInstruction }],
         tools: [{ googleMaps: {} }]
       };
 
@@ -616,25 +625,6 @@ Reply with ONLY ONE WORD: search, places, or custom`;
   }
 
   /**
-   * Build prompt with context
-   */
-  private buildPromptWithContext(userMessage: string, context: string): string {
-    return `
-=== USER MESSAGE ===
-${userMessage}
-
-=== CONTEXT ===
-${context}
-
-Please process this request. Remember:
-1. If you need database information, use tools to inspect schema first
-2. Never assume the database structure
-3. Use tools to read/write data
-4. Respond in your natural Vietnamese style with appropriate messages
-`;
-  }
-
-  /**
    * Save tool-based conversation to database
    */
   private async saveToolBasedConversation(
@@ -702,13 +692,14 @@ Please process this request. Remember:
 
   /**
    * Legacy method for simple text responses
+   * @deprecated Use analyzeAndExecuteWithMessages with contextBuilder instead
    */
   async analyzeAndExecute(
     userMessage: string,
-    context: string,
+    contextBuilder: any, // ContextBuilderService instance
     message?: TelegramMessage
   ): Promise<AIResponse> {
-    const result = await this.analyzeAndExecuteWithMessages(userMessage, context, message);
+    const result = await this.analyzeAndExecuteWithMessages(userMessage, contextBuilder, message);
     
     // Convert messages to single response text
     const responseText = result.messages
