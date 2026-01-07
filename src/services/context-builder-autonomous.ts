@@ -95,6 +95,96 @@ Observe the conversation history to mirror the user's vibe:
     const emotionalContext = await this.emotionService.getEmotionalContext();
     console.log(`✅ [ContextBuilder] Emotion: ${emotionalContext.substring(0, 100)}...`);
 
+    // Get cross-chat context (RAG for multi-chat awareness)
+    console.log('🔗 [ContextBuilder] Step 3.5: Building cross-chat context (RAG)...');
+    let crossChatContext = '';
+    const userTgId = message.from?.id || 0;
+    const currentChatId = message.chat.id;
+    
+    if (userTgId) {
+      try {
+        // Get all chats where user participated
+        const userChats = await this.dbService.getUserChats(userTgId);
+        
+        // Filter: only chats with recent activity (within 2 hours)
+        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
+        const now = new Date();
+        
+        const recentChats = userChats
+          .filter(chat => {
+            // Skip current chat
+            if (chat.chatId === currentChatId) return false;
+            
+            // Check if last message is within 2 hours
+            if (!chat.lastMessageAt) return false;
+            
+            const lastMessageTime = new Date(chat.lastMessageAt as Date);
+            const timeDiff = now.getTime() - lastMessageTime.getTime();
+            
+            return timeDiff <= TWO_HOURS_MS;
+          })
+          .slice(0, 2); // Only take 2 most recent chats
+        
+        console.log(`   🔗 Found ${userChats.length} total chats, ${recentChats.length} with recent activity (< 2h)`);
+        
+        if (recentChats.length > 0) {
+          // Get 25 messages from each recent chat
+          const chatIds = recentChats.map(c => c.chatId);
+          const messagesMap = await this.dbService.getRecentMessagesFromChats(chatIds, 25);
+          
+          // Build cross-chat context
+          const contextParts: string[] = [];
+          
+          for (const chat of recentChats) {
+            const chatMetadata = await this.dbService.getChatMetadata(chat.chatId);
+            const messages = messagesMap[chat.chatId] || [];
+            
+            if (messages.length > 0) {
+              const lastMsgTime = new Date(chat.lastMessageAt as Date);
+              const minutesAgo = Math.floor((now.getTime() - lastMsgTime.getTime()) / (60 * 1000));
+              const timeAgoText = minutesAgo < 60 
+                ? `${minutesAgo} phút trước` 
+                : `${Math.floor(minutesAgo / 60)} giờ ${minutesAgo % 60} phút trước`;
+              
+              const msgPreview = messages.slice(-5).map(m => 
+                `[${m.createdAt ? new Date(m.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '??:??'}] ${m.senderName}: ${m.messageText.substring(0, 60)}${m.messageText.length > 60 ? '...' : ''}`
+              ).join('\n');
+              
+              contextParts.push(`
+📍 ${chatMetadata.chatType === 'group' ? 'GROUP' : 'PRIVATE'}: "${chatMetadata.chatName}"
+   Chat ID: ${chat.chatId}
+   Last active: ${timeAgoText}
+   Messages available: ${messages.length}
+   Preview (last 5):
+${msgPreview}
+`);
+            }
+          }
+          
+          if (contextParts.length > 0) {
+            crossChatContext = `
+
+=== 🔗 OTHER CHATS CONTEXT (Cross-Chat RAG) ===
+⚠️ User has RECENT conversations in other chats (within 2 hours). Reference when needed.
+
+${contextParts.join('\n')}
+
+💡 How to use:
+- If user mentions something from another chat → You can reference these contexts
+- If user says "như tụi tao nói ở gr kia" → Check these contexts
+- ALWAYS clarify which chat you're referring to when mentioning cross-chat info
+- Current chat is PRIMARY, other chats are SECONDARY context`;
+            
+            console.log(`   ✅ Built cross-chat context with ${contextParts.length} recent chats`);
+          }
+        } else {
+          console.log(`   ℹ️ No recent chats found (all chats inactive for > 2 hours)`);
+        }
+      } catch (error) {
+        console.error('   ❌ Error building cross-chat context:', error);
+      }
+    }
+
     // Get group members if in group
     let groupMembersInfo = '';
     if (message.chat.type !== 'private') {
@@ -133,6 +223,12 @@ Observe the conversation history to mirror the user's vibe:
 
     // Build system instruction with current context
     console.log('📝 [ContextBuilder] Step 7: Building system instruction...');
+    
+    // Determine current chat context type
+    const currentChatContext = message.chat.type === 'private' 
+      ? `🔒 PRIVATE CHAT with ${message.from?.first_name || 'User'}`
+      : `👥 GROUP CHAT: "${message.chat.title}" (${groupMembersInfo ? 'multiple participants' : 'group'})`;
+    
     const contextualSystemPrompt = `${AUTONOMOUS_AGENT_PROMPT}${pronounInstruction}
 
 === ⏰ CURRENT TIME ===
@@ -147,11 +243,21 @@ Telegram ID: ${message.from?.id || 0} ${isSpecialUser ? '⭐ (SPECIAL - use em/a
 DB User ID: ${userId}
 Username: @${message.from?.username || 'none'}
 
-=== 💬 CHAT INFO ===
+=== 💬 CURRENT CHAT CONTEXT ===
+${currentChatContext}
 Type: ${message.chat.type}
 ${message.chat.type !== 'private' ? `Group: ${message.chat.title}` : ''}
 Chat ID: ${message.chat.id}
-${groupId ? `DB Group ID: ${groupId}` : ''}${groupMembersInfo}${repliedMessageInfo}
+${groupId ? `DB Group ID: ${groupId}` : ''}
+
+⚠️ IMPORTANT - Chat Type Awareness:
+${message.chat.type === 'private' 
+  ? '- You are chatting 1-on-1 with this user privately'
+  : `- You are chatting in a GROUP with multiple people
+- Respond to the group, not just one person
+- Be aware of group dynamics and multiple participants
+- When someone asks something, answer for everyone to see`
+}${groupMembersInfo}${repliedMessageInfo}${crossChatContext}
 
 === 🗄️ DATABASE TABLES ===
 ${schemaInfo}
@@ -159,7 +265,7 @@ ${schemaInfo}
 💡 Use tools: describe_table(name), execute_sql() for queries.`;
     console.log(`✅ [ContextBuilder] System instruction length: ${contextualSystemPrompt.length} chars`);
     console.log(`🎭 [ContextBuilder] Pronoun mode: ${isSpecialUser ? 'em/anh (special user)' : 'adaptive (based on user style)'}`);
-
+    console.log(`💬 [ContextBuilder] Chat type: ${message.chat.type} | Cross-chat: ${crossChatContext ? 'Yes' : 'No'}`);
     // Build conversation history from DB (in Gemini format)
     console.log('💬 [ContextBuilder] Step 8: Building conversation history...');
     const conversationHistory = await this.buildConversationHistory(message);
@@ -201,8 +307,11 @@ ${schemaInfo}
     // Convert to Gemini message format
     const history: any[] = [];
 
-    console.log(`   📚 [ContextBuilder.History] Converting last 20 messages to Gemini format...`);
-    for (const msg of recentMessages.slice(-20)) { // Last 20 messages
+    // Take last 50 messages for current chat (API format)
+    const messagesToConvert = recentMessages.slice(-50);
+    console.log(`   📚 [ContextBuilder.History] Converting ${messagesToConvert.length} messages to Gemini API format...`);
+    
+    for (const msg of messagesToConvert) {
       const role = msg.isAI ? 'model' : 'user';
 
       // In group chats, prefix with sender name for context

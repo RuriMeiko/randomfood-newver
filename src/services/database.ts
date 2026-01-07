@@ -218,6 +218,141 @@ export class DatabaseService {
   }
 
   /**
+   * Get all chats where a specific user has participated
+   * @param userTgId - Telegram user ID
+   * @returns Array of chat IDs with metadata
+   */
+  async getUserChats(userTgId: number) {
+    try {
+      console.log(`🔍 Getting all chats for user TG ID: ${userTgId}`);
+
+      // Get distinct chat IDs where user has sent messages
+      const userChats = await this.db
+        .select({
+          chatId: chatMessages.chatId,
+          lastMessageAt: sql<Date>`MAX(${chatMessages.createdAt})`.as('last_message_at'),
+          messageCount: sql<number>`COUNT(*)`.as('message_count'),
+        })
+        .from(chatMessages)
+        .where(eq(chatMessages.senderTgId, userTgId))
+        .groupBy(chatMessages.chatId)
+        .orderBy(desc(sql`MAX(${chatMessages.createdAt})`));
+
+      console.log(`📝 Found ${userChats.length} chats for user ${userTgId}`);
+      
+      return userChats;
+
+    } catch (error) {
+      console.error('❌ Error getting user chats:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Get chat metadata (name, type) for a chat ID
+   * @param chatId - Telegram chat ID
+   * @returns Chat metadata
+   */
+  async getChatMetadata(chatId: number) {
+    try {
+      // Try to find in groups table first
+      const group = await this.db
+        .select({
+          chatId: tgGroups.tgChatId,
+          chatName: tgGroups.title,
+          chatType: sql<string>`'group'`.as('chat_type'),
+        })
+        .from(tgGroups)
+        .where(eq(tgGroups.tgChatId, chatId))
+        .limit(1);
+
+      if (group.length > 0) {
+        return group[0];
+      }
+
+      // If not found in groups, it's a private chat
+      // Try to get user info from messages
+      const privateChat = await this.db
+        .select({
+          chatId: chatMessages.chatId,
+          chatName: tgUsers.displayName,
+          chatType: sql<string>`'private'`.as('chat_type'),
+        })
+        .from(chatMessages)
+        .leftJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
+        .where(and(
+          eq(chatMessages.chatId, chatId),
+          sql`${chatMessages.sender} = 'user'`
+        ))
+        .limit(1);
+
+      if (privateChat.length > 0) {
+        return privateChat[0];
+      }
+
+      return {
+        chatId,
+        chatName: `Chat ${chatId}`,
+        chatType: 'unknown'
+      };
+
+    } catch (error) {
+      console.error('❌ Error getting chat metadata:', error);
+      return {
+        chatId,
+        chatName: `Chat ${chatId}`,
+        chatType: 'unknown'
+      };
+    }
+  }
+
+  /**
+   * Get recent messages from multiple chats (for cross-chat context)
+   * @param chatIds - Array of chat IDs
+   * @param limit - Number of messages per chat (default 25)
+   * @returns Object mapping chatId to messages
+   */
+  async getRecentMessagesFromChats(chatIds: number[], limit: number = 25) {
+    try {
+      console.log(`🔍 Getting recent messages from ${chatIds.length} chats (${limit} per chat)`);
+
+      const result: { [chatId: number]: any[] } = {};
+
+      for (const chatId of chatIds) {
+        const messages = await this.db
+          .select({
+            sender: chatMessages.sender,
+            senderTgId: chatMessages.senderTgId,
+            messageText: chatMessages.messageText,
+            createdAt: chatMessages.createdAt,
+            senderDisplayName: tgUsers.displayName,
+            senderUsername: tgUsers.tgUsername,
+          })
+          .from(chatMessages)
+          .leftJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
+          .where(eq(chatMessages.chatId, chatId))
+          .orderBy(desc(chatMessages.createdAt))
+          .limit(limit);
+
+        result[chatId] = messages.reverse().map(msg => ({
+          sender: msg.sender,
+          senderName: msg.sender === 'ai' ? 'Mây (AI)' : (msg.senderDisplayName || msg.senderUsername || `User ${msg.senderTgId}`),
+          messageText: msg.messageText,
+          createdAt: msg.createdAt,
+          isAI: msg.sender === 'ai'
+        }));
+      }
+
+      console.log(`📝 Retrieved messages from ${Object.keys(result).length} chats`);
+      return result;
+
+    } catch (error) {
+      console.error('❌ Error getting messages from multiple chats:', error);
+      return {};
+    }
+  }
+
+  /**
    * Save a user message to the database immediately (without AI response)
    * @param message - Telegram message
    */
