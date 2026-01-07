@@ -48,14 +48,25 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- Function to reset RPD counter every day
+-- Function to reset RPD counter every day at midnight (Dong Duong timezone GMT+7)
 CREATE OR REPLACE FUNCTION reset_rpd_counters()
 RETURNS TRIGGER AS $$
+DECLARE
+  current_date_ict DATE;
+  last_reset_date_ict DATE;
 BEGIN
-  IF EXTRACT(EPOCH FROM (NOW() - NEW.last_reset_day)) >= 86400 THEN
+  -- Get current date in ICT timezone (GMT+7)
+  current_date_ict := (NOW() AT TIME ZONE 'Asia/Bangkok')::DATE;
+  
+  -- Get last reset date in ICT timezone
+  last_reset_date_ict := (NEW.last_reset_day AT TIME ZONE 'Asia/Bangkok')::DATE;
+  
+  -- Reset if we're on a different day
+  IF current_date_ict > last_reset_date_ict THEN
     NEW.requests_per_day := 0;
     NEW.last_reset_day := NOW();
   END IF;
+  
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
