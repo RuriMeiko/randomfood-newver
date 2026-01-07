@@ -72,7 +72,7 @@ export class AIAnalyzerService {
 
     try {
       // Detect request type to choose appropriate bot config
-      const requestType = this.detectRequestType(userMessage);
+      const requestType = await this.detectRequestType(userMessage);
       console.log(`🎯 [AIAnalyzer] Detected request type: ${requestType}`);
 
       // Build the initial prompt with context
@@ -114,24 +114,53 @@ export class AIAnalyzerService {
   }
 
   /**
-   * Detect request type from user message
+   * Detect request type from user message using AI classification
    */
-  private detectRequestType(userMessage: string): 'custom' | 'search' | 'places' {
+  private async detectRequestType(userMessage: string): Promise<'custom' | 'search' | 'places'> {
+    try {
+      const classificationPrompt = `Classify this user message into ONE category:
+
+User message: "${userMessage}"
+
+Categories:
+- "search": General web search queries (facts, news, information about something/someone)
+- "places": Location/restaurant/place queries (find nearby restaurants, cafes, shops, addresses)
+- "custom": Everything else (personal conversation, database queries, emotions, debt tracking, etc.)
+
+Reply with ONLY ONE WORD: search, places, or custom`;
+
+      const result = await this.apiKeyManager!.executeWithRetry(
+        (client) => client.models.generateContent({
+          model: 'gemini-2.0-flash-lite',
+          config: {
+            thinkingConfig: { thinkingBudget: 0 },
+            safetySettings: this.getSafetyConfig()
+          },
+          contents: [{ role: 'user', parts: [{ text: classificationPrompt }] }]
+        })
+      );
+
+      const candidate = result?.candidates?.[0];
+      const textPart = candidate?.content?.parts?.find((part: any) => part.text);
+      
+      if (textPart?.text) {
+        const classification = textPart.text.toLowerCase().trim();
+        if (classification.includes('search')) return 'search';
+        if (classification.includes('places')) return 'places';
+        if (classification.includes('custom')) return 'custom';
+      }
+    } catch (error) {
+      console.warn('⚠️ [AIAnalyzer] AI classification failed, using fallback:', error);
+    }
+    
+    // Fallback: keyword-based detection
     const msg = userMessage.toLowerCase();
+    const placesKeywords = ['quán', 'nhà hàng', 'ăn gần', 'quán ăn', 'gần đây', 'nearby'];
+    if (placesKeywords.some(kw => msg.includes(kw))) return 'places';
     
-    // Check for places/restaurants queries
-    const placesKeywords = ['quán', 'nhà hàng', 'ăn gần', 'quán ăn', 'food', 'restaurant', 'gần đây', 'nearby', 'địa điểm'];
-    if (placesKeywords.some(kw => msg.includes(kw))) {
-      return 'places';
-    }
+    const searchKeywords = ['tìm kiếm', 'tra cứu', 'thông tin về', 'ai là', 'what is', 'who is'];
+    if (searchKeywords.some(kw => msg.includes(kw))) return 'search';
     
-    // Check for general search queries
-    const searchKeywords = ['tìm', 'search', 'tra cứu', 'thông tin về', 'ai là', 'what is', 'who is', 'khi nào', 'when', 'bao giờ'];
-    if (searchKeywords.some(kw => msg.includes(kw))) {
-      return 'search';
-    }
-    
-    // Default: custom tools (database, emotions)
     return 'custom';
   }
 

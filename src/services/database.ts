@@ -232,19 +232,7 @@ export class DatabaseService {
       .limit(50);
   }
 
-  async getConfirmationPreferences(userId: number) {
-    return await this.db
-      .select({
-        targetUserId: confirmationPreferences.targetUserId,
-        requireDebtCreation: confirmationPreferences.requireDebtCreation,
-        requireDebtPayment: confirmationPreferences.requireDebtPayment,
-        requireDebtDeletion: confirmationPreferences.requireDebtDeletion,
-        requireDebtCompletion: confirmationPreferences.requireDebtCompletion,
-      })
-      .from(confirmationPreferences)
-      .where(eq(confirmationPreferences.userId, userId))
-      .limit(50);
-  }
+
 
   async executeSqlQuery(query: string, params: any, context?: SQLExecutionContext) {
     try {
