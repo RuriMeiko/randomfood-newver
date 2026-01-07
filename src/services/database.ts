@@ -271,9 +271,9 @@ export class DatabaseService {
         }
       }
 
-      console.log('Executing SQL:', query, params);
+      // console.log('Executing SQL:', query, params);
       const result = await this.sql.query(query, params);
-      console.log('✅ SQL executed successfully:', result);
+      // console.log('✅ SQL executed successfully:', result);
 
       // Log action (only for INSERT and UPDATE, not SELECT)
       if (!safeQuery.startsWith('select') && context) {

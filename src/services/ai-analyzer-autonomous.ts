@@ -23,7 +23,7 @@ import { AUTONOMOUS_AGENT_PROMPT } from '../prompts/autonomous-agent';
 import { ApiKeyManager } from './api-key-manager';
 
 export class AIAnalyzerService {
-  private genAI: GoogleGenAI;
+  private genAI: GoogleGenAI | any;
   private toolExecutor: ToolExecutor;
   private apiKeyManager: ApiKeyManager | null = null;
   private initPromise: Promise<void> | null = null;
@@ -71,11 +71,28 @@ export class AIAnalyzerService {
     await this.ensureInitialized();
 
     try {
+      // Detect request type to choose appropriate bot config
+      const requestType = this.detectRequestType(userMessage);
+      console.log(`🎯 [AIAnalyzer] Detected request type: ${requestType}`);
+
       // Build the initial prompt with context
       const fullPrompt = this.buildPromptWithContext(userMessage, context);
 
-      // Execute tool calling loop
-      const response = await this.toolCallingLoop(fullPrompt, message);
+      let response: AIResponse;
+
+      // Route to appropriate bot based on request type
+      switch (requestType) {
+        case 'search':
+          response = await this.handleWithGoogleSearch(fullPrompt, message);
+          break;
+        case 'places':
+          response = await this.handleWithGoogleMaps(fullPrompt, message);
+          break;
+        case 'custom':
+        default:
+          response = await this.toolCallingLoop(fullPrompt, message);
+          break;
+      }
 
       // Save conversation
       if (message) {
@@ -94,6 +111,28 @@ export class AIAnalyzerService {
         intent: 'error'
       };
     }
+  }
+
+  /**
+   * Detect request type from user message
+   */
+  private detectRequestType(userMessage: string): 'custom' | 'search' | 'places' {
+    const msg = userMessage.toLowerCase();
+    
+    // Check for places/restaurants queries
+    const placesKeywords = ['quán', 'nhà hàng', 'ăn gần', 'quán ăn', 'food', 'restaurant', 'gần đây', 'nearby', 'địa điểm'];
+    if (placesKeywords.some(kw => msg.includes(kw))) {
+      return 'places';
+    }
+    
+    // Check for general search queries
+    const searchKeywords = ['tìm', 'search', 'tra cứu', 'thông tin về', 'ai là', 'what is', 'who is', 'khi nào', 'when', 'bao giờ'];
+    if (searchKeywords.some(kw => msg.includes(kw))) {
+      return 'search';
+    }
+    
+    // Default: custom tools (database, emotions)
+    return 'custom';
   }
 
   /**
@@ -160,7 +199,7 @@ export class AIAnalyzerService {
             model: 'gemini-flash-latest',
             config: {
               thinkingConfig: {
-                thinkingBudget: 0
+                thinkingBudget: -1
               },
               safetySettings: this.getSafetyConfig(),
               systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
@@ -172,31 +211,17 @@ export class AIAnalyzerService {
         
         let result;
         if (this.apiKeyManager) {
-          // Build config with Google Maps location context if available
+          // Build config with custom function tools only
           const config: any = {
             thinkingConfig: {
-              thinkingBudget: 8000
+              thinkingBudget: -1  // Disable thinking mode - output JSON directly
             },
             safetySettings: this.getSafetyConfig(),
             systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
             tools: [
-              { functionDeclarations: allTools },  // Custom function tools
-              { googleSearch: {} },                // Google Search grounding
-              { googleMaps: {} }                   // Google Maps grounding
+              { functionDeclarations: allTools }  // Custom function tools only
             ]
           };
-
-          // Add location context for Google Maps if available
-          if (userLocation) {
-            config.toolConfig = {
-              retrievalConfig: {
-                latLng: {
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude
-                }
-              }
-            };
-          }
 
           // Use ApiKeyManager with automatic retry
           result = await this.apiKeyManager.executeWithRetry(
@@ -210,28 +235,14 @@ export class AIAnalyzerService {
           // Direct call without key rotation
           const config: any = {
             thinkingConfig: {
-              thinkingBudget: 8000
+              thinkingBudget: -1  // Disable thinking mode - output JSON directly
             },
             safetySettings: this.getSafetyConfig(),
             systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
             tools: [
-              { functionDeclarations: allTools },  // Custom function tools
-              { googleSearch: {} },                // Google Search grounding
-              { googleMaps: {} }                   // Google Maps grounding
+              { functionDeclarations: allTools }  // Custom function tools only
             ]
           };
-
-          // Add location context for Google Maps if available
-          if (userLocation) {
-            config.toolConfig = {
-              retrievalConfig: {
-                latLng: {
-                  latitude: userLocation.latitude,
-                  longitude: userLocation.longitude
-                }
-              }
-            };
-          }
 
           result = await this.genAI.models.generateContent({
             model: 'gemini-flash-latest',
@@ -245,28 +256,54 @@ export class AIAnalyzerService {
           throw new Error('No candidate in response');
         }
 
-        const content = candidate.content;
-        
-        // 📝 LOG: AI's full response
+        // 📝 LOG: Full candidate for debugging
         console.log('\n=== AI RESPONSE ===');
+        console.log('Finish Reason:', candidate.finishReason);
+        console.log('Safety Ratings:', JSON.stringify(candidate.safetyRatings, null, 2));
+        
+        const content = candidate.content;
         console.log('Role:', content?.role);
         console.log('Parts:', JSON.stringify(content?.parts, null, 2));
         
-        const functionCalls = content?.parts?.filter((part: any) => part.functionCall);
+        // Handle blocked/filtered responses
+        if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
+          console.warn(`⚠️ [AIAnalyzer] Response blocked by ${candidate.finishReason}`);
+          return {
+            messages: [{ text: 'Em không thể trả lời câu này được 😅', delay: '1000' }],
+            intent: 'blocked'
+          };
+        }
+        
+        // Handle empty content
+        if (!content || !content.parts || content.parts.length === 0) {
+          console.warn('⚠️ [AIAnalyzer] Empty or missing content.parts in response');
+          console.log('Full candidate:', JSON.stringify(candidate, null, 2));
+          return {
+            messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
+            intent: 'error'
+          };
+        }
+        
+        // Ensure functionCalls is always an array (never undefined)
+        const functionCalls = content?.parts?.filter((part: any) => part.functionCall) || [];
 
         // If no function calls, we have a final response
-        if (!functionCalls || functionCalls.length === 0) {
+        if (functionCalls.length === 0) {
           console.log('✅ [AIAnalyzer] Final response received (no more tool calls)');
           
           // Extract the text response (skip thinking parts)
           const textPart = content?.parts?.find((part: any) => part.text && !part.thought);
           if (textPart?.text) {
-            console.log('\n📄 [AIAnalyzer] Final text response:');
-            console.log(textPart.text);
-            console.log('\n');
+            // console.log('\n📄 [AIAnalyzer] Final text response:');
+            // console.log(textPart.text);
+            // console.log('\n');
             return this.parseFinalResponse(textPart.text);
           }
 
+          // Debug: log all parts to understand why no text found
+          console.warn('⚠️ [AIAnalyzer] No text part found in final response');
+          console.log('Available parts:', content?.parts?.map((p: any) => Object.keys(p)));
+          
           // Fallback if no text
           return {
             messages: [{ text: 'Xin lỗi, em chưa hiểu lắm 🥺', delay: '1000' }],
@@ -346,12 +383,146 @@ export class AIAnalyzerService {
   }
 
   /**
+   * Handle request with Google Search grounding
+   */
+  private async handleWithGoogleSearch(
+    prompt: string,
+    message?: TelegramMessage
+  ): Promise<AIResponse> {
+    console.log('🔍 [AIAnalyzer] Using Google Search bot...');
+
+    const conversationHistory: any[] = [
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
+
+    try {
+      const result = await this.apiKeyManager!.executeWithRetry(
+        (client) => client.models.generateContent({
+          model: 'gemini-flash-latest',
+          config: {
+            thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
+            safetySettings: this.getSafetyConfig(),
+            systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+            tools: [{ googleSearch: {} }]
+          },
+          contents: conversationHistory
+        })
+      );
+
+      const candidate = result?.candidates?.[0];
+      const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
+      
+      if (textPart?.text) {
+        return this.parseFinalResponse(textPart.text);
+      }
+
+      return {
+        messages: [{ text: 'Em không tìm được thông tin 😢', delay: '1000' }],
+        intent: 'search_failed'
+      };
+    } catch (error: any) {
+      console.error('❌ [AIAnalyzer] Google Search error:', error);
+      return {
+        messages: [{ text: 'Em bị lỗi khi tìm kiếm 😢', delay: '800' }],
+        intent: 'error'
+      };
+    }
+  }
+
+  /**
+   * Handle request with Google Maps grounding
+   */
+  private async handleWithGoogleMaps(
+    prompt: string,
+    message?: TelegramMessage
+  ): Promise<AIResponse> {
+    console.log('🗺️ [AIAnalyzer] Using Google Maps bot...');
+
+    // Get user location
+    let userLocation: { latitude: number; longitude: number } | null = null;
+    if (message) {
+      const userId = await this.dbService.getUserId(message.from?.id || 0);
+      if (userId) {
+        try {
+          const locationData = await this.dbService.executeSqlQuery(
+            `SELECT latitude, longitude FROM tg_users WHERE id = $1`,
+            [userId.toString()],
+            { reason: 'Get user location for Maps', userMessage: message.text }
+          );
+          if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
+            userLocation = {
+              latitude: parseFloat(locationData.rows[0].latitude),
+              longitude: parseFloat(locationData.rows[0].longitude)
+            };
+          }
+        } catch (error) {
+          console.warn('⚠️ [AIAnalyzer] Failed to get location:', error);
+        }
+      }
+    }
+
+    const conversationHistory: any[] = [
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
+
+    try {
+      const config: any = {
+        thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
+        safetySettings: this.getSafetyConfig(),
+        systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
+        tools: [{ googleMaps: {} }]
+      };
+
+      // Add location context if available
+      if (userLocation) {
+        config.toolConfig = {
+          retrievalConfig: {
+            latLng: {
+              latitude: userLocation.latitude,
+              longitude: userLocation.longitude
+            }
+          }
+        };
+      }
+
+      const result = await this.apiKeyManager!.executeWithRetry(
+        (client) => client.models.generateContent({
+          model: 'gemini-flash-latest',
+          config,
+          contents: conversationHistory
+        })
+      );
+
+      const candidate = result?.candidates?.[0];
+      const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
+      
+      if (textPart?.text) {
+        return this.parseFinalResponse(textPart.text);
+      }
+
+      return {
+        messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
+        intent: 'maps_failed'
+      };
+    } catch (error: any) {
+      console.error('❌ [AIAnalyzer] Google Maps error:', error);
+      return {
+        messages: [{ text: 'Em bị lỗi khi tìm địa điểm 😢', delay: '800' }],
+        intent: 'error'
+      };
+    }
+  }
+
+  /**
    * Parse the final text response from AI
    */
   private parseFinalResponse(text: string): AIResponse {
     try {
       // Clean the text first - remove any thinking process or metadata that leaked through
       let cleanedText = text.trim();
+      
+      // Remove <thinking> tags and their content
+      cleanedText = cleanedText.replace(/<thinking>[\s\S]*?<\/thinking>/gi, '');
       
       // Remove numbered steps like "4. **Read Updated State:**"
       cleanedText = cleanedText.replace(/^\d+\.\s+\*\*.+?\*\*:?[\s\S]*?(?=\{|\d+\.|$)/gm, '');
