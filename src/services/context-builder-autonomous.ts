@@ -23,7 +23,7 @@ export class ContextBuilderService {
 
   /**
    * Build minimal context without schema assumptions
-   * Now includes pre-loaded database schema to reduce tool calls
+   * Optimized to match system prompt structure
    */
   async buildContext(message: TelegramMessage): Promise<string> {
     const userId = await this.dbService.getUserId(message.from?.id || 0);
@@ -31,8 +31,34 @@ export class ContextBuilderService {
       ? null 
       : await this.dbService.getGroupId(message.chat.id);
 
-    // Get recent messages only (no schema details)
+    // Get recent messages
     const recentMessages = await this.dbService.getRecentMessagesByChatId(message.chat.id);
+    
+    // Get group members if in group
+    let groupMembersInfo = '';
+    if (message.chat.type !== 'private') {
+      const members = await this.dbService.getGroupMembers(message.chat.id);
+      if (members.length > 0) {
+        groupMembersInfo = `\n\n=== GROUP MEMBERS (Who are in this chat) ===\n${members.map(m => 
+          `- ${m.displayName || m.tgUsername || `User ${m.tgId}`} (@${m.tgUsername || 'no_username'})`
+        ).join('\n')}\n\nUse these names when user mentions someone (e.g., "Long", "Hùng"). Check DB to find user ID.`;
+      }
+    }
+    
+    // Get replied message if this is a reply
+    let repliedMessageInfo = '';
+    if (message.reply_to_message) {
+      const repliedMsg = await this.dbService.getMessageByTelegramId(
+        message.chat.id,
+        message.reply_to_message.message_id
+      );
+      
+      if (repliedMsg) {
+        repliedMessageInfo = `\n\n=== 🔁 USER IS REPLYING TO ===\nFrom: ${repliedMsg.senderName}\nMessage: "${repliedMsg.messageText}"\n\n👉 User's current message is a REPLY to the above. Consider this context.`;
+      } else if (message.reply_to_message.text) {
+        repliedMessageInfo = `\n\n=== 🔁 USER IS REPLYING TO ===\nMessage: "${message.reply_to_message.text}"\n\n👉 User is replying to this message.`;
+      }
+    }
     
     // Get current time in Vietnam timezone
     const currentTime = new Date();
@@ -50,36 +76,37 @@ export class ContextBuilderService {
     // Get emotional context
     const emotionalContext = await this.emotionService.getEmotionalContext();
     
-    // Pre-load database schema to reduce tool calls
+    // Pre-load database schema
     const schemaInfo = await this.dbService.listTables();
     
-    // Build schema-agnostic context
+    // Build optimized context matching system prompt structure
     const context = `
-=== CURRENT TIME ===
-${vietnamTime} (Asia/Ho_Chi_Minh - GMT+7)
+=== ⏰ CURRENT TIME ===
+${vietnamTime} (Vietnam Time Zone)
 
-=== ${emotionalContext} ===
+=== 💭 YOUR CURRENT EMOTIONAL STATE ===
+${emotionalContext}
 
-=== CURRENT USER ===
+=== 👤 CURRENT USER ===
 Name: ${message.from?.first_name || 'Unknown'} ${message.from?.last_name || ''}
 Telegram ID: ${message.from?.id || 0}
-Database ID: ${userId}
+Database User ID: ${userId}
 Username: @${message.from?.username || 'none'}
 
-=== CURRENT CHAT ===
+=== 💬 CURRENT CHAT ===
 Type: ${message.chat.type}
-${message.chat.type !== 'private' ? `Title: ${message.chat.title}` : ''}
+${message.chat.type !== 'private' ? `Group Name: ${message.chat.title}` : ''}
 Chat ID: ${message.chat.id}
-${groupId ? `Database Group ID: ${groupId}` : ''}
+${groupId ? `Database Group ID: ${groupId}` : ''}${groupMembersInfo}${repliedMessageInfo}
 
-=== DATABASE SCHEMA (Available Tables) ===
+=== 🗄️ DATABASE TABLES (Available) ===
 ${schemaInfo}
 
-Use tools like describe_table(table_name) to see column details, or execute_sql() to query data.
+💡 Use tools: describe_table(name) for columns, execute_sql() for queries.
 
-=== RECENT CONVERSATION HISTORY ===
-(This is just summary - full conversation will be in messages format below)
-Recent messages: ${recentMessages.length} messages loaded
+=== 📚 CONVERSATION SUMMARY ===
+Total messages loaded: ${recentMessages.length}
+Recent 5 messages preview:
 ${recentMessages.slice(-5).map(msg => {
   const msgTime = msg.createdAt ? new Intl.DateTimeFormat('vi-VN', {
     timeZone: 'Asia/Ho_Chi_Minh',
@@ -91,11 +118,16 @@ ${recentMessages.slice(-5).map(msg => {
   return `[${msgTime}] ${msg.isAI ? 'Mây' : msg.senderName}: ${msg.messageText.substring(0, 80)}${msg.messageText.length > 80 ? '...' : ''}`;
 }).join('\n')}
 
-=== IMPORTANT REMINDERS ===
-- You have database table list above, use describe_table() or execute_sql() to get/modify data
-- Recent conversation history will be provided as proper messages below
-- Use analyze_interaction tool to update your emotions based on user's message
-- Respond naturally in Vietnamese, matching your emotional state
+⚠️ Full conversation history is in message format (role: user/model) sent separately.
+
+=== 🎯 YOUR MISSION ===
+1. Feel the user's message impact on your emotions → use analyze_interaction if needed
+2. Need data? → use inspect/execute_sql tools
+3. Respond naturally with your current emotional state
+4. Output MULTIPLE messages if natural (like real texting!)
+   - Example: ["oke anh", "để em check nha", "đợi tý đi"]
+   - Don't force everything into one long message
+5. NO periods (.) at end of messages
 `;
     
     return context;

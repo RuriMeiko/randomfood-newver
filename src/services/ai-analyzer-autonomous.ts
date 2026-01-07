@@ -598,6 +598,7 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       // Try to parse as JSON
       const parsed = JSON.parse(cleanedText);
       
+      // Return messages as-is (AI will naturally create multiple messages)
       return {
         messages: parsed.messages || [{ text: cleanedText, delay: '1000' }],
         intent: parsed.type || 'reply'

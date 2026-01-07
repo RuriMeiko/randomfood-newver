@@ -80,6 +80,34 @@ export class DatabaseService {
     return group[0]?.id || null;
   }
 
+  /**
+   * Get group members (users who have sent messages in this chat)
+   */
+  async getGroupMembers(chatId: number): Promise<any[]> {
+    try {
+      const members = await this.db
+        .selectDistinct({
+          tgId: tgUsers.tgId,
+          displayName: tgUsers.displayName,
+          tgUsername: tgUsers.tgUsername,
+        })
+        .from(chatMessages)
+        .innerJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
+        .where(
+          and(
+            eq(chatMessages.chatId, chatId),
+            eq(chatMessages.sender, 'user')
+          )
+        )
+        .limit(50);
+
+      return members;
+    } catch (error) {
+      console.error('❌ Error getting group members:', error);
+      return [];
+    }
+  }
+
   async getAllUsers() {
     return await this.db
       .select({
@@ -105,6 +133,48 @@ export class DatabaseService {
       .limit(10);
   }
 
+
+  /**
+   * Get a specific message by telegram_message_id
+   */
+  async getMessageByTelegramId(chatId: number, telegramMessageId: number) {
+    try {
+      const message = await this.db
+        .select({
+          sender: chatMessages.sender,
+          senderTgId: chatMessages.senderTgId,
+          messageText: chatMessages.messageText,
+          createdAt: chatMessages.createdAt,
+          senderDisplayName: tgUsers.displayName,
+          senderUsername: tgUsers.tgUsername,
+        })
+        .from(chatMessages)
+        .leftJoin(tgUsers, eq(chatMessages.senderTgId, tgUsers.tgId))
+        .where(
+          and(
+            eq(chatMessages.chatId, chatId),
+            eq(chatMessages.telegramMessageId, telegramMessageId)
+          )
+        )
+        .limit(1);
+
+      if (message.length > 0) {
+        const msg = message[0];
+        return {
+          sender: msg.sender,
+          senderName: msg.sender === 'ai' ? 'Mây (AI)' : (msg.senderDisplayName || msg.senderUsername || `User ${msg.senderTgId}`),
+          messageText: msg.messageText,
+          createdAt: msg.createdAt,
+          isAI: msg.sender === 'ai'
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('❌ Error getting message by telegram ID:', error);
+      return null;
+    }
+  }
 
   /**
    * Get recent messages from a specific chat ID (all users + AI messages)
@@ -160,12 +230,14 @@ export class DatabaseService {
         sender: 'user',
         senderTgId: message.from?.id || 0,
         messageText: message.text || '',
+        telegramMessageId: message.message_id,
+        replyToMessageId: message.reply_to_message?.message_id || null,
         intent: null,
         sqlQuery: null,
         sqlParams: null,
       } as any);
 
-      console.log(`💾 Saved user message to chat history (chatId: ${chatId})`);
+      console.log(`💾 Saved user message to chat history (chatId: ${chatId}, msgId: ${message.message_id})`);
     } catch (error) {
       console.error('❌ Failed to save user message:', error);
     }

@@ -45,6 +45,8 @@ export const chatMessages = pgTable('chat_messages', {
   sender: text('sender').$type<'user' | 'ai'>().notNull(),
   senderTgId: bigint('sender_tg_id', { mode: 'number' }),
   messageText: text('message_text').notNull(),
+  telegramMessageId: bigint('telegram_message_id', { mode: 'number' }),
+  replyToMessageId: bigint('reply_to_message_id', { mode: 'number' }),
   createdAt: timestamp('created_at').defaultNow(),
 });
 
