@@ -180,8 +180,8 @@ export default class TelegramApi {
 
     const messageParams = {
       ...params,
-      // Use plain text instead of HTML to avoid parsing issues
-      parse_mode: undefined, // Remove HTML parse mode that might cause issues
+      // Use Markdown for formatting support (bold, italic, etc.)
+      parse_mode: 'Markdown',
     };
     
     // Ensure text is clean and not empty after processing

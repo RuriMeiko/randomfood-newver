@@ -48,6 +48,30 @@ export class AIAnalyzerService {
   }
 
   /**
+   * Send typing indicator to Telegram
+   */
+  private async sendTypingAction(chatId?: number): Promise<void> {
+    if (!chatId) return;
+    
+    try {
+      const TELEGRAM_BOT_TOKEN = (globalThis as any).TELEGRAM_BOT_TOKEN;
+      if (!TELEGRAM_BOT_TOKEN) return;
+      
+      await fetch(`https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendChatAction`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          action: 'typing'
+        })
+      });
+    } catch (error) {
+      // Silent fail - don't break the flow if typing fails
+      console.debug('⚠️ [AIAnalyzer] Failed to send typing action:', error);
+    }
+  }
+
+  /**
    * Ensure ApiKeyManager is initialized
    */
   private async ensureInitialized(): Promise<void> {
@@ -225,6 +249,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       iteration++;
       console.log(`🔄 [AIAnalyzer] Tool loop iteration ${iteration}/${MAX_ITERATIONS}`);
 
+      // Send typing indicator before each API call
+      await this.sendTypingAction(message?.chat.id);
+
       try {
         // Call Gemini with tools
         // Note: We don't use responseSchema here because it conflicts with tool calling
@@ -360,6 +387,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
         // Execute all function calls
         console.log(`\n🔧 [AIAnalyzer] Executing ${functionCalls.length} tool call(s)...`);
         
+        // Send typing indicator when starting tool execution
+        await this.sendTypingAction(message?.chat.id);
+        
         // Add model's response with function calls to history
         if (content && content.parts) {
           conversationHistory.push({
@@ -379,6 +409,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
           
           console.log(`\n🔧 [AIAnalyzer] === TOOL CALL: ${fc.name} ===`);
           console.log('📥 Arguments:', JSON.stringify(fc.args, null, 2));
+          
+          // Send typing indicator before each tool execution
+          await this.sendTypingAction(message?.chat.id);
           
           const result = await this.toolExecutor.executeTool(
             { name: fc.name, args: fc.args || {} },
@@ -401,6 +434,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
           });
         }
 
+        // Send typing indicator after tools complete, before next iteration
+        await this.sendTypingAction(message?.chat.id);
+        
         // Add tool results to conversation
         conversationHistory.push({
           role: 'user',
@@ -437,10 +473,16 @@ Reply with ONLY ONE WORD: search, places, or custom`;
   ): Promise<AIResponse> {
     console.log('🔍 [AIAnalyzer] Using Google Search bot...');
 
+    // Send typing indicator
+    await this.sendTypingAction(message?.chat.id);
+
     const context: ContextResult = await contextBuilder.buildContext(message);
     const conversationHistory: any[] = context.conversationHistory;
 
     try {
+      // Send typing before API call
+      await this.sendTypingAction(message?.chat.id);
+      
       const result = await this.apiKeyManager!.executeWithRetry(
         (client) => client.models.generateContent({
           model: 'gemini-flash-latest',
@@ -483,6 +525,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
   ): Promise<AIResponse> {
     console.log('🗺️ [AIAnalyzer] Using Google Maps bot...');
 
+    // Send typing indicator
+    await this.sendTypingAction(message?.chat.id);
+
     const context: ContextResult = await contextBuilder.buildContext(message);
     const conversationHistory: any[] = context.conversationHistory;
 
@@ -507,6 +552,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
     }
 
     try {
+      // Send typing before API call
+      await this.sendTypingAction(message?.chat.id);
+      
       const config: any = {
         thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
         safetySettings: this.getSafetyConfig(),
