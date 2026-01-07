@@ -78,6 +78,7 @@ export class AIBotAutonomous {
       // 2. Build schema-agnostic context
       console.log('🧠 [AIBotAutonomous] Step 2: Building context (schema-agnostic)...');
       const context = await this._contextBuilder.buildContext(message);
+      const conversationHistory = await this._contextBuilder.buildConversationHistory(message);
       console.log('📄 [AIBotAutonomous] Context built');
 
       // 3. Execute autonomous agent with tool calling loop
@@ -86,7 +87,8 @@ export class AIBotAutonomous {
         message.text || "",
         context,
         message,
-        ctx
+        ctx,
+        conversationHistory
       );
       console.log('🔍 [AIBotAutonomous] Agent response:', {
         intent: aiResponse.intent,

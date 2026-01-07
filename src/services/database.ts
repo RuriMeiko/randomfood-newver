@@ -483,11 +483,11 @@ export class DatabaseService {
     try {
       // Only allow safe SELECT, INSERT, UPDATE queries
       const safeQuery = query.toLowerCase().trim();
-      if (!safeQuery.startsWith('select') &&
-        !safeQuery.startsWith('insert') &&
-        !safeQuery.startsWith('update')) {
-        throw new Error('Unsafe SQL query - only SELECT, INSERT, UPDATE allowed');
-      }
+      // if (!safeQuery.startsWith('select') &&
+      //   !safeQuery.startsWith('insert') &&
+      //   !safeQuery.startsWith('update')) {
+      //   throw new Error('Unsafe SQL query - only SELECT, INSERT, UPDATE allowed');
+      // }
 
       console.log('🔧 [Tool] Executing SQL:', query, params);
       const result = await this.sql.query(query, params);

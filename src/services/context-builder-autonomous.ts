@@ -23,6 +23,7 @@ export class ContextBuilderService {
 
   /**
    * Build minimal context without schema assumptions
+   * Now includes pre-loaded database schema to reduce tool calls
    */
   async buildContext(message: TelegramMessage): Promise<string> {
     const userId = await this.dbService.getUserId(message.from?.id || 0);
@@ -49,6 +50,9 @@ export class ContextBuilderService {
     // Get emotional context
     const emotionalContext = await this.emotionService.getEmotionalContext();
     
+    // Pre-load database schema to reduce tool calls
+    const schemaInfo = await this.dbService.listTables();
+    
     // Build schema-agnostic context
     const context = `
 === CURRENT TIME ===
@@ -68,40 +72,55 @@ ${message.chat.type !== 'private' ? `Title: ${message.chat.title}` : ''}
 Chat ID: ${message.chat.id}
 ${groupId ? `Database Group ID: ${groupId}` : ''}
 
-=== RECENT CONVERSATION HISTORY (Last 50 messages) ===
-${recentMessages.length > 0 ? 
-  recentMessages.map(msg => {
-    // Format timestamp for each message
-    const msgTime = msg.createdAt ? new Intl.DateTimeFormat('vi-VN', {
-      timeZone: 'Asia/Ho_Chi_Minh',
-      month: '2-digit',
-      day: '2-digit',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false
-    }).format(new Date(msg.createdAt)) : 'Unknown time';
-    
-    return `[${msgTime}] ${msg.senderName}: ${msg.messageText}`;
-  }).join('\\n') : 
-  'No previous messages in this conversation.'
-}
+=== DATABASE SCHEMA (Available Tables) ===
+${schemaInfo}
 
-=== IMPORTANT INSTRUCTIONS ===
+Use tools like describe_table(table_name) to see column details, or execute_sql() to query data.
 
-You do NOT have information about:
-- Database schema (tables, columns, relationships)
-- Existing debts or user data
-- Name aliases or preferences
+=== RECENT CONVERSATION HISTORY ===
+(This is just summary - full conversation will be in messages format below)
+Recent messages: ${recentMessages.length} messages loaded
+${recentMessages.slice(-5).map(msg => {
+  const msgTime = msg.createdAt ? new Intl.DateTimeFormat('vi-VN', {
+    timeZone: 'Asia/Ho_Chi_Minh',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(new Date(msg.createdAt)) : '??:??';
+  
+  return `[${msgTime}] ${msg.isAI ? 'Mây' : msg.senderName}: ${msg.messageText.substring(0, 80)}${msg.messageText.length > 80 ? '...' : ''}`;
+}).join('\n')}
 
-To access this information, you MUST:
-1. Use tools to inspect the database schema
-2. Use tools to query for specific data
-3. Never assume what tables or columns exist
-
-The database is your external memory. Observe it, don't assume it.
+=== IMPORTANT REMINDERS ===
+- You have database table list above, use describe_table() or execute_sql() to get/modify data
+- Recent conversation history will be provided as proper messages below
+- Use analyze_interaction tool to update your emotions based on user's message
+- Respond naturally in Vietnamese, matching your emotional state
 `;
     
     return context;
+  }
+
+  /**
+   * Build conversation history as message format for AI
+   */
+  async buildConversationHistory(message: TelegramMessage): Promise<any[]> {
+    const recentMessages = await this.dbService.getRecentMessagesByChatId(message.chat.id);
+    
+    // Convert to Gemini message format with proper roles
+    const history: any[] = [];
+    
+    for (const msg of recentMessages.slice(-20)) { // Last 20 messages for context
+      const role = msg.isAI ? 'model' : 'user';
+      const senderName = msg.isAI ? '' : `${msg.senderName}: `;
+      
+      history.push({
+        role,
+        parts: [{ text: `${senderName}${msg.messageText}` }]
+      });
+    }
+    
+    return history;
   }
 
   /**

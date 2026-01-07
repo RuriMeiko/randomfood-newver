@@ -193,7 +193,10 @@ export class ApiKeyManager {
       if (!key) return;
       
       const newFailureCount = key.failureCount + 1;
-      const shouldBlock = is429 || newFailureCount >= 3;
+      
+      // For 429 errors, don't block immediately - just increment failure count
+      // Key will be temporarily skipped but can be retried after cooldown
+      const shouldBlock = !is429 && newFailureCount >= 3;
       
       await this.db
         .update(apiKeys)
@@ -201,7 +204,7 @@ export class ApiKeyManager {
           failureCount: newFailureCount,
           lastFailure: new Date(),
           isBlocked: shouldBlock,
-          blockedUntil: shouldBlock ? new Date(Date.now() + 60000) : key.blockedUntil, // 1 min
+          blockedUntil: shouldBlock ? new Date(Date.now() + 60000) : key.blockedUntil, // 1 min for non-429 errors
           updatedAt: new Date(),
         })
         .where(eq(apiKeys.id, keyId));
@@ -212,7 +215,11 @@ export class ApiKeyManager {
       // Rotate to next key
       this.rotateKey();
       
-      console.warn(`⚠️ [ApiKeyManager] Key ${key.keyName} marked as failed (429: ${is429})`);
+      if (is429) {
+        console.warn(`⚠️ [ApiKeyManager] Key ${key.keyName} hit 429 - will retry after cooldown (not blocked)`);
+      } else {
+        console.warn(`⚠️ [ApiKeyManager] Key ${key.keyName} marked as failed`);
+      }
     } catch (error) {
       console.error(`❌ [ApiKeyManager] Error marking failure:`, error);
     }
@@ -303,14 +310,15 @@ export class ApiKeyManager {
         if (is429) {
           console.warn(`⚠️ [ApiKeyManager] Rate limit hit (attempt ${attempt + 1}/${maxRetries})`);
           
-          // Report failure (will auto-rotate to next key)
+          // Report failure (will auto-rotate to next key, but not block it)
           const currentKey = this.keys[this.currentKeyIndex];
           if (currentKey) {
             await this.reportFailure(currentKey.id, true);
           }
           
-          // Wait a bit before retry
-          await this.sleep(1000 * (attempt + 1));
+          // Wait 10 seconds before retry (as requested)
+          console.log(`⏳ [ApiKeyManager] Waiting 10s before retry...`);
+          await this.sleep(10000);
           
           continue;
         }

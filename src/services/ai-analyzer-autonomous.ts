@@ -63,7 +63,8 @@ export class AIAnalyzerService {
     userMessage: string,
     context: string,
     message?: TelegramMessage,
-    ctx?: ExecutionContext
+    ctx?: ExecutionContext,
+    conversationHistory?: any[]
   ): Promise<AIResponse> {
     console.log('🤖 [AIAnalyzer] Starting autonomous agent loop...');
 
@@ -83,14 +84,14 @@ export class AIAnalyzerService {
       // Route to appropriate bot based on request type
       switch (requestType) {
         case 'search':
-          response = await this.handleWithGoogleSearch(fullPrompt, message);
+          response = await this.handleWithGoogleSearch(fullPrompt, message, conversationHistory);
           break;
         case 'places':
-          response = await this.handleWithGoogleMaps(fullPrompt, message);
+          response = await this.handleWithGoogleMaps(fullPrompt, message, conversationHistory);
           break;
         case 'custom':
         default:
-          response = await this.toolCallingLoop(fullPrompt, message);
+          response = await this.toolCallingLoop(fullPrompt, message, conversationHistory);
           break;
       }
 
@@ -169,18 +170,18 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    */
   private async toolCallingLoop(
     prompt: string,
-    message?: TelegramMessage
+    message?: TelegramMessage,
+    existingHistory?: any[]
   ): Promise<AIResponse> {
     const MAX_ITERATIONS = 10;
     let iteration = 0;
 
-    // Initialize conversation history
-    const conversationHistory: any[] = [
-      {
-        role: 'user',
-        parts: [{ text: prompt }]
-      }
-    ];
+    // Initialize conversation history with existing messages if provided
+    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
+      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
+      : [{ role: 'user', parts: [{ text: prompt }] }];
+    
+    console.log(`📚 [AIAnalyzer] Conversation history: ${conversationHistory.length} messages`);
 
     // Context for tool execution
     const toolContext = {
@@ -416,13 +417,14 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    */
   private async handleWithGoogleSearch(
     prompt: string,
-    message?: TelegramMessage
+    message?: TelegramMessage,
+    existingHistory?: any[]
   ): Promise<AIResponse> {
     console.log('🔍 [AIAnalyzer] Using Google Search bot...');
 
-    const conversationHistory: any[] = [
-      { role: 'user', parts: [{ text: prompt }] }
-    ];
+    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
+      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
+      : [{ role: 'user', parts: [{ text: prompt }] }];
 
     try {
       const result = await this.apiKeyManager!.executeWithRetry(
@@ -463,7 +465,8 @@ Reply with ONLY ONE WORD: search, places, or custom`;
    */
   private async handleWithGoogleMaps(
     prompt: string,
-    message?: TelegramMessage
+    message?: TelegramMessage,
+    existingHistory?: any[]
   ): Promise<AIResponse> {
     console.log('🗺️ [AIAnalyzer] Using Google Maps bot...');
 
@@ -490,9 +493,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       }
     }
 
-    const conversationHistory: any[] = [
-      { role: 'user', parts: [{ text: prompt }] }
-    ];
+    const conversationHistory: any[] = existingHistory && existingHistory.length > 0
+      ? [...existingHistory, { role: 'user', parts: [{ text: prompt }] }]
+      : [{ role: 'user', parts: [{ text: prompt }] }];
 
     try {
       const config: any = {
