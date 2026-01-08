@@ -88,7 +88,6 @@ export class AIAnalyzerService {
     userMessage: string,
     contextBuilder: any, // ContextBuilderService instance
     message?: TelegramMessage,
-    ctx?: ExecutionContext,
     conversationHistory?: any[]
   ): Promise<AIResponse> {
     console.log('🤖 [AIAnalyzer] Starting autonomous agent loop...');

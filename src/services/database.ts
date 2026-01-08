@@ -412,18 +412,13 @@ export class DatabaseService {
       .select({
         id: debts.id,
         amount: debts.amount,
-        currency: debts.currency,
         note: debts.note,
-        occurredAt: debts.occurredAt,
         lenderId: debts.lenderId,
         borrowerId: debts.borrowerId,
       })
       .from(debts)
       .where(
-        and(
-          eq(debts.settled, false),
-          groupId ? eq(debts.groupId, groupId) : sql`${debts.groupId} IS NULL`
-        )
+        groupId ? eq(debts.groupId, groupId) : sql`${debts.groupId} IS NULL`
       )
       .limit(20);
   }
