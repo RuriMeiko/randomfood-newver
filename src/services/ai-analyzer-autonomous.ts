@@ -198,23 +198,10 @@ Reply with ONLY ONE WORD: search, places, or custom`;
     let iteration = 0;
 
     // Build context with system instruction + conversation history
-    console.log('\n🔧 [AIAnalyzer] ============================================');
-    console.log('🔧 [AIAnalyzer] CALLING CONTEXT BUILDER');
-    console.log('🔧 [AIAnalyzer] ============================================\n');
     const context: ContextResult = await contextBuilder.buildContext(message);
     
     // Use conversation history from context builder (already in Gemini format)
     const conversationHistory: any[] = context.conversationHistory;
-    
-    console.log('\n🔧 [AIAnalyzer] ============================================');
-    console.log('🔧 [AIAnalyzer] CONTEXT RECEIVED FROM BUILDER');
-    console.log('🔧 [AIAnalyzer] ============================================');
-    console.log(`📊 [AIAnalyzer] System instruction: ${context.systemInstruction.length} chars`);
-    console.log(`📊 [AIAnalyzer] Conversation messages: ${conversationHistory.length}`);
-    console.log(`📊 [AIAnalyzer] User ID: ${context.metadata.userId}`);
-    console.log(`📊 [AIAnalyzer] Group ID: ${context.metadata.groupId || 'N/A'}`);
-    console.log(`📊 [AIAnalyzer] Chat type: ${context.metadata.chatType}`);
-    console.log('🔧 [AIAnalyzer] ============================================\n');
 
     // Context for tool execution
     const toolContext = {
@@ -247,10 +234,9 @@ Reply with ONLY ONE WORD: search, places, or custom`;
 
     while (iteration < MAX_ITERATIONS) {
       iteration++;
-      console.log(`🔄 [AIAnalyzer] Tool loop iteration ${iteration}/${MAX_ITERATIONS}`);
 
-      // Send typing indicator before each API call
-      await this.sendTypingAction(message?.chat.id);
+      // Send typing indicator (non-blocking)
+      this.sendTypingAction(message?.chat.id).catch(() => {});
 
       try {
         // Call Gemini with tools
@@ -287,15 +273,6 @@ Reply with ONLY ONE WORD: search, places, or custom`;
             ]
           };
 
-          console.log('\n🚀 [AIAnalyzer] ============================================');
-          console.log('🚀 [AIAnalyzer] SENDING TO GEMINI API');
-          console.log('🚀 [AIAnalyzer] ============================================');
-          console.log(`📤 [AIAnalyzer] Model: gemini-flash-latest`);
-          console.log(`📤 [AIAnalyzer] System instruction: ${config.systemInstruction[0].text.length} chars`);
-          console.log(`📤 [AIAnalyzer] Conversation history: ${conversationHistory.length} messages`);
-          console.log(`📤 [AIAnalyzer] Tools available: ${allTools.length}`);
-          console.log('🚀 [AIAnalyzer] ============================================\n');
-
           // Use ApiKeyManager with automatic retry
           result = await this.apiKeyManager.executeWithRetry(
             (client) => client.models.generateContent({
@@ -329,14 +306,7 @@ Reply with ONLY ONE WORD: search, places, or custom`;
           throw new Error('No candidate in response');
         }
 
-        // 📝 LOG: Full candidate for debugging
-        console.log('\n=== AI RESPONSE ===');
-        console.log('Finish Reason:', candidate.finishReason);
-        console.log('Safety Ratings:', JSON.stringify(candidate.safetyRatings, null, 2));
-        
         const content = candidate.content;
-        console.log('Role:', content?.role);
-        console.log('Parts:', JSON.stringify(content?.parts, null, 2));
         
         // Handle blocked/filtered responses
         if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
@@ -373,10 +343,6 @@ Reply with ONLY ONE WORD: search, places, or custom`;
             return this.parseFinalResponse(textPart.text);
           }
 
-          // Debug: log all parts to understand why no text found
-          console.warn('⚠️ [AIAnalyzer] No text part found in final response');
-          console.log('Available parts:', content?.parts?.map((p: any) => Object.keys(p)));
-          
           // Fallback if no text
           return {
             messages: [{ text: 'Xin lỗi, em chưa hiểu lắm 🥺', delay: '1000' }],
@@ -385,10 +351,10 @@ Reply with ONLY ONE WORD: search, places, or custom`;
         }
 
         // Execute all function calls
-        console.log(`\n🔧 [AIAnalyzer] Executing ${functionCalls.length} tool call(s)...`);
+        console.log(`🔧 [AIAnalyzer] Executing ${functionCalls.length} tool(s)...`);
         
-        // Send typing indicator when starting tool execution
-        await this.sendTypingAction(message?.chat.id);
+        // Send typing indicator (non-blocking)
+        this.sendTypingAction(message?.chat.id).catch(() => {});
         
         // Add model's response with function calls to history
         if (content && content.parts) {

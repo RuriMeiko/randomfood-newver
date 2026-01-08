@@ -664,18 +664,29 @@ export class DatabaseService {
    */
   async listTables(): Promise<string> {
     try {
-      const query = `
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_type = 'BASE TABLE'
-        ORDER BY table_name;
-      `;
+      // Use materialized view if available (faster), fallback to information_schema
+      let query = `SELECT schema_data FROM mv_schema_info LIMIT 1;`;
+      
+      try {
+        const result = await this.sql.query(query);
+        if (result && result[0]?.schema_data) {
+          return JSON.stringify({ tables: result[0].schema_data.map((t: any) => t.table_name) }, null, 2);
+        }
+      } catch {
+        // Fallback to information_schema if materialized view doesn't exist
+        query = `
+          SELECT table_name
+          FROM information_schema.tables
+          WHERE table_schema = 'public'
+            AND table_type = 'BASE TABLE'
+          ORDER BY table_name;
+        `;
+        const result = await this.sql.query(query);
+        const tables = result.map((row: any) => row.table_name);
+        return JSON.stringify({ tables }, null, 2);
+      }
 
-      const result = await this.sql.query(query);
-      const tables = result.map((row: any) => row.table_name);
-
-      return JSON.stringify({ tables }, null, 2);
+      return JSON.stringify({ tables: [] }, null, 2);
     } catch (error: any) {
       console.error('❌ Error listing tables:', error);
       return JSON.stringify({ error: error.message }, null, 2);

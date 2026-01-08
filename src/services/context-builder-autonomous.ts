@@ -26,6 +26,9 @@ export interface ContextResult {
 
 export class ContextBuilderService {
   private emotionService: EmotionService;
+  private schemaCache: string | null = null;
+  private schemaCacheTime: number = 0;
+  private readonly SCHEMA_CACHE_TTL = 60000; // 60 seconds (Workers can restart anytime)
 
   constructor(
     private dbService: DatabaseService,
@@ -39,44 +42,25 @@ export class ContextBuilderService {
    * Returns structured format ready for Gemini API
    */
   async buildContext(message: TelegramMessage): Promise<ContextResult> {
-    console.log('\n📦 [ContextBuilder] ============================================');
-    console.log('📦 [ContextBuilder] BUILDING CONTEXT FOR GEMINI API');
-    console.log('📦 [ContextBuilder] ============================================');
-
-    console.log('👤 [ContextBuilder] Step 1: Getting user and group IDs...');
-    const userId = await this.dbService.getUserId(message.from?.id || 0);
-    const groupId = message.chat.type === 'private'
-      ? null
-      : await this.dbService.getGroupId(message.chat.id);
-    console.log(`✅ [ContextBuilder] User ID: ${userId}, Group ID: ${groupId || 'N/A (private chat)'}`);
-
-    // Determine pronoun usage based on Telegram ID
+    // Determine pronoun usage (sync operation)
     const tgUserId = message.from?.id || 0;
     const specialUserIds = [1775446945, 942231869, 6048017680];
     const isSpecialUser = specialUserIds.includes(tgUserId);
-    let pronounInstruction = '';
-    if (isSpecialUser) {
-      pronounInstruction = `
+    const pronounInstruction = isSpecialUser ? `
 === SPECIAL RELATIONSHIP OVERRIDE (CRITICAL) ===
 User ID ${tgUserId} is a VIP/Special Person.
 - **PRONOUNS:** You MUST refer to yourself as "em" and the user as "anh".
 - **TONE ADJUSTMENT:** Even if you are Gen Z/Chaotic, keep a layer of sweetness/softness for this user.
 - **EXAMPLES:** "dạ anh", "anh ơi", "bé biết rùi nè anh".
-`;
-      console.log('🎭 [ContextBuilder] Special user detected - using em/anh pronouns');
-    } else {
-      pronounInstruction = `
+` : `
 === SOCIAL DYNAMICS (ADAPTIVE PRONOUNS) ===
 Observe the conversation history to mirror the user's vibe:
 - If User says "anh/em" -> You say "anh/em".
 - If User says "mày/tao" -> You say "tao/mày" (be sassy).
 - If Unsure/Default -> You say "tui" and call user "bà" or "ông".
 `;
-      console.log('🎭 [ContextBuilder] Regular user - pronouns based on conversation style');
-    }
 
-    // Get current time in Vietnam timezone
-    console.log('⏰ [ContextBuilder] Step 2: Getting current time...');
+    // Get current time (sync operation)
     const currentTime = new Date();
     const vietnamTime = new Intl.DateTimeFormat('vi-VN', {
       timeZone: 'Asia/Ho_Chi_Minh',
@@ -88,141 +72,27 @@ Observe the conversation history to mirror the user's vibe:
       second: '2-digit',
       hour12: false
     }).format(currentTime);
-    console.log(`✅ [ContextBuilder] Time: ${vietnamTime}`);
 
-    // Get emotional context
-    console.log('💭 [ContextBuilder] Step 3: Getting emotional state...');
-    const emotionalContext = await this.emotionService.getEmotionalContext();
-    console.log(`✅ [ContextBuilder] Emotion: ${emotionalContext.substring(0, 100)}...`);
-
-    // Get cross-chat context (RAG for multi-chat awareness)
-    console.log('🔗 [ContextBuilder] Step 3.5: Building cross-chat context (RAG)...');
-    let crossChatContext = '';
-    const userTgId = message.from?.id || 0;
-    const currentChatId = message.chat.id;
-    
-    if (userTgId) {
-      try {
-        // Get all chats where user participated
-        const userChats = await this.dbService.getUserChats(userTgId);
-        
-        // Filter: only chats with recent activity (within 2 hours)
-        const TWO_HOURS_MS = 2 * 60 * 60 * 1000;
-        const now = new Date();
-        
-        const recentChats = userChats
-          .filter(chat => {
-            // Skip current chat
-            if (chat.chatId === currentChatId) return false;
-            
-            // Check if last message is within 2 hours
-            if (!chat.lastMessageAt) return false;
-            
-            const lastMessageTime = new Date(chat.lastMessageAt as Date);
-            const timeDiff = now.getTime() - lastMessageTime.getTime();
-            
-            return timeDiff <= TWO_HOURS_MS;
-          })
-          .slice(0, 2); // Only take 2 most recent chats
-        
-        console.log(`   🔗 Found ${userChats.length} total chats, ${recentChats.length} with recent activity (< 2h)`);
-        
-        if (recentChats.length > 0) {
-          // Get 25 messages from each recent chat
-          const chatIds = recentChats.map(c => c.chatId);
-          const messagesMap = await this.dbService.getRecentMessagesFromChats(chatIds, 25);
-          
-          // Build cross-chat context
-          const contextParts: string[] = [];
-          
-          for (const chat of recentChats) {
-            const chatMetadata = await this.dbService.getChatMetadata(chat.chatId);
-            const messages = messagesMap[chat.chatId] || [];
-            
-            if (messages.length > 0) {
-              const lastMsgTime = new Date(chat.lastMessageAt as Date);
-              const minutesAgo = Math.floor((now.getTime() - lastMsgTime.getTime()) / (60 * 1000));
-              const timeAgoText = minutesAgo < 60 
-                ? `${minutesAgo} phút trước` 
-                : `${Math.floor(minutesAgo / 60)} giờ ${minutesAgo % 60} phút trước`;
-              
-              const msgPreview = messages.slice(-5).map(m => 
-                `[${m.createdAt ? new Date(m.createdAt).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) : '??:??'}] ${m.senderName}: ${m.messageText.substring(0, 60)}${m.messageText.length > 60 ? '...' : ''}`
-              ).join('\n');
-              
-              contextParts.push(`
-📍 ${chatMetadata.chatType === 'group' ? 'GROUP' : 'PRIVATE'}: "${chatMetadata.chatName}"
-   Chat ID: ${chat.chatId}
-   Last active: ${timeAgoText}
-   Messages available: ${messages.length}
-   Preview (last 5):
-${msgPreview}
-`);
-            }
-          }
-          
-          if (contextParts.length > 0) {
-            crossChatContext = `
-
-=== 🔗 OTHER CHATS CONTEXT (Cross-Chat RAG) ===
-⚠️ User has RECENT conversations in other chats (within 2 hours). Reference when needed.
-
-${contextParts.join('\n')}
-
-💡 How to use:
-- If user mentions something from another chat → You can reference these contexts
-- If user says "như tụi tao nói ở gr kia" → Check these contexts
-- ALWAYS clarify which chat you're referring to when mentioning cross-chat info
-- Current chat is PRIMARY, other chats are SECONDARY context`;
-            
-            console.log(`   ✅ Built cross-chat context with ${contextParts.length} recent chats`);
-          }
-        } else {
-          console.log(`   ℹ️ No recent chats found (all chats inactive for > 2 hours)`);
-        }
-      } catch (error) {
-        console.error('   ❌ Error building cross-chat context:', error);
-      }
-    }
-
-    // Get group members if in group
-    let groupMembersInfo = '';
-    if (message.chat.type !== 'private') {
-      console.log('👥 [ContextBuilder] Step 4: Getting group members...');
-      const members = await this.dbService.getGroupMembers(message.chat.id);
-      console.log(`✅ [ContextBuilder] Found ${members.length} group members`);
-      if (members.length > 0) {
-        groupMembersInfo = `\n\n=== 👥 GROUP MEMBERS ===\n${members.map(m =>
-          `- ${m.displayName || m.tgUsername || `User ${m.tgId}`} (@${m.tgUsername || 'no_username'})`
-        ).join('\n')}\n\n💡 Use these names when user mentions someone. Query DB to find user_id.`;
-      }
-    }
-
-    // Get replied message if this is a reply
-    let repliedMessageInfo = '';
-    if (message.reply_to_message) {
-      console.log('🔁 [ContextBuilder] Step 5: Getting replied message context...');
-      const repliedMsg = await this.dbService.getMessageByTelegramId(
-        message.chat.id,
-        message.reply_to_message.message_id
-      );
-
-      if (repliedMsg) {
-        console.log(`✅ [ContextBuilder] Found replied message from ${repliedMsg.senderName}`);
-        repliedMessageInfo = `\n\n=== 🔁 REPLYING TO ===\nFrom: ${repliedMsg.senderName}\nMessage: "${repliedMsg.messageText}"\n\n👉 User's message is a REPLY to above.`;
-      } else if (message.reply_to_message.text) {
-        console.log(`✅ [ContextBuilder] Using inline replied message`);
-        repliedMessageInfo = `\n\n=== 🔁 REPLYING TO ===\nMessage: "${message.reply_to_message.text}"`;
-      }
-    }
-
-    // Pre-load database schema
-    console.log('🗄️ [ContextBuilder] Step 6: Loading database schema...');
-    const schemaInfo = await this.dbService.listTables();
-    console.log(`✅ [ContextBuilder] Database schema loaded`);
+    // Run ALL async operations in PARALLEL
+    const [
+      userId,
+      groupId,
+      emotionalContext,
+      crossChatContext,
+      groupMembersInfo,
+      repliedMessageInfo,
+      schemaInfo
+    ] = await Promise.all([
+      this.dbService.getUserId(tgUserId),
+      message.chat.type === 'private' ? null : this.dbService.getGroupId(message.chat.id),
+      this.emotionService.getEmotionalContext(),
+      this.buildCrossChatContext(message, currentTime),
+      message.chat.type !== 'private' ? this.buildGroupMembersInfo(message) : '',
+      message.reply_to_message ? this.buildRepliedMessageInfo(message) : '',
+      this.getCachedSchema()
+    ]);
 
     // Build system instruction with current context
-    console.log('📝 [ContextBuilder] Step 7: Building system instruction...');
     
     // Determine current chat context type
     const currentChatContext = message.chat.type === 'private' 
@@ -267,21 +137,7 @@ ${schemaInfo}
     console.log(`🎭 [ContextBuilder] Pronoun mode: ${isSpecialUser ? 'em/anh (special user)' : 'adaptive (based on user style)'}`);
     console.log(`💬 [ContextBuilder] Chat type: ${message.chat.type} | Cross-chat: ${crossChatContext ? 'Yes' : 'No'}`);
     // Build conversation history from DB (in Gemini format)
-    console.log('💬 [ContextBuilder] Step 8: Building conversation history...');
     const conversationHistory = await this.buildConversationHistory(message);
-    console.log(`✅ [ContextBuilder] Conversation history: ${conversationHistory.length} messages`);
-
-    console.log('\n✅ [ContextBuilder] ============================================');
-    console.log('✅ [ContextBuilder] CONTEXT BUILD COMPLETE!');
-    console.log('✅ [ContextBuilder] ============================================');
-    console.log(`📊 [ContextBuilder] Summary:`);
-    console.log(`   - System instruction: ${contextualSystemPrompt.length} chars`);
-    console.log(`   - Conversation messages: ${conversationHistory.length}`);
-    console.log(`   - User ID: ${userId}`);
-    console.log(`   - Group ID: ${groupId || 'N/A'}`);
-    console.log(`   - Chat type: ${message.chat.type}`);
-    console.log(`   - Pronouns: ${isSpecialUser ? 'em/anh (special user ⭐)' : 'adaptive (tui/bà or mày/tao)'}`);
-    console.log('\n');
 
     return {
       systemInstruction: contextualSystemPrompt,
@@ -300,16 +156,11 @@ ${schemaInfo}
    * Returns array ready for Gemini API
    */
   async buildConversationHistory(message: TelegramMessage): Promise<any[]> {
-    console.log('   📚 [ContextBuilder.History] Fetching recent messages from DB...');
     const recentMessages = await this.dbService.getRecentMessagesByChatId(message.chat.id);
-    console.log(`   📚 [ContextBuilder.History] Found ${recentMessages.length} messages in DB`);
-
-    // Convert to Gemini message format
     const history: any[] = [];
 
-    // Take last 50 messages for current chat (API format)
+    // Take last 30 messages (optimized from 50)
     const messagesToConvert = recentMessages.slice(-50);
-    console.log(`   📚 [ContextBuilder.History] Converting ${messagesToConvert.length} messages to Gemini API format...`);
     
     for (const msg of messagesToConvert) {
       const role = msg.isAI ? 'model' : 'user';
@@ -324,10 +175,8 @@ ${schemaInfo}
         parts: [{ text: `${senderPrefix}${msg.messageText}` }]
       });
     }
-    console.log(`   📚 [ContextBuilder.History] Converted ${history.length} messages`);
 
     // Add current user message at the end
-    console.log(`   📚 [ContextBuilder.History] Adding current user message...`);
     const currentSenderPrefix = message.chat.type !== 'private'
       ? `${message.from?.first_name || 'User'}: `
       : '';
@@ -336,9 +185,111 @@ ${schemaInfo}
       role: 'user',
       parts: [{ text: `${currentSenderPrefix}${message.text || ''}` }]
     });
-    console.log(`   ✅ [ContextBuilder.History] Total messages in history: ${history.length}`);
 
     return history;
+  }
+
+  /**
+   * Get cached schema or fetch if expired
+   */
+  private async getCachedSchema(): Promise<string> {
+    const now = Date.now();
+    if (this.schemaCache && (now - this.schemaCacheTime) < this.SCHEMA_CACHE_TTL) {
+      return this.schemaCache;
+    }
+    this.schemaCache = await this.dbService.listTables();
+    this.schemaCacheTime = now;
+    return this.schemaCache;
+  }
+
+  /**
+   * Build cross-chat context (optimized: 1 hour, 1 chat, 15 messages)
+   */
+  private async buildCrossChatContext(message: TelegramMessage, now: Date): Promise<string> {
+    const userTgId = message.from?.id || 0;
+    if (!userTgId) return '';
+
+    try {
+      const userChats = await this.dbService.getUserChats(userTgId);
+      const ONE_HOUR_MS = 60 * 60 * 1000;
+      
+      const recentChats = userChats
+        .filter(chat => {
+          if (chat.chatId === message.chat.id) return false;
+          if (!chat.lastMessageAt) return false;
+          const timeDiff = now.getTime() - new Date(chat.lastMessageAt as Date).getTime();
+          return timeDiff <= ONE_HOUR_MS;
+        })
+        .slice(0, 1); // Only 1 most recent chat
+      
+      if (recentChats.length === 0) return '';
+
+      const chatIds = recentChats.map(c => c.chatId);
+      const messagesMap = await this.dbService.getRecentMessagesFromChats(chatIds, 15);
+      
+      const contextParts: string[] = [];
+      for (const chat of recentChats) {
+        const [chatMetadata, messages] = await Promise.all([
+          this.dbService.getChatMetadata(chat.chatId),
+          Promise.resolve(messagesMap[chat.chatId] || [])
+        ]);
+        
+        if (messages.length > 0) {
+          const minutesAgo = Math.floor((now.getTime() - new Date(chat.lastMessageAt as Date).getTime()) / 60000);
+          const msgPreview = messages.slice(-3).map(m => 
+            `${m.senderName}: ${m.messageText.substring(0, 40)}...`
+          ).join('\n');
+          
+          contextParts.push(`📍 ${chatMetadata.chatType === 'group' ? 'GROUP' : 'PRIVATE'}: "${chatMetadata.chatName}" (${minutesAgo}m ago)\n${msgPreview}`);
+        }
+      }
+      
+      return contextParts.length > 0 
+        ? `\n\n=== 🔗 OTHER CHAT (within 1h) ===\n${contextParts.join('\n')}` 
+        : '';
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /**
+   * Build group members info
+   */
+  private async buildGroupMembersInfo(message: TelegramMessage): Promise<string> {
+    try {
+      const members = await this.dbService.getGroupMembers(message.chat.id);
+      if (members.length === 0) return '';
+      
+      return `\n\n=== 👥 GROUP (${members.length} members) ===\n${members.slice(0, 10).map(m =>
+        `- ${m.displayName || m.tgUsername || 'User'} (@${m.tgUsername || 'none'})`
+      ).join('\n')}`;
+    } catch (error) {
+      return '';
+    }
+  }
+
+  /**
+   * Build replied message info
+   */
+  private async buildRepliedMessageInfo(message: TelegramMessage): Promise<string> {
+    if (!message.reply_to_message) return '';
+    
+    try {
+      const repliedMsg = await this.dbService.getMessageByTelegramId(
+        message.chat.id,
+        message.reply_to_message.message_id
+      );
+
+      if (repliedMsg) {
+        return `\n\n=== 🔁 REPLYING TO ===\n${repliedMsg.senderName}: "${repliedMsg.messageText}"`;
+      } else if (message.reply_to_message.text) {
+        return `\n\n=== 🔁 REPLYING TO ===\n"${message.reply_to_message.text}"`;
+      }
+    } catch (error) {
+      return '';
+    }
+    
+    return '';
   }
 
 }
