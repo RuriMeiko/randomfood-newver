@@ -26,9 +26,6 @@ export interface ContextResult {
 
 export class ContextBuilderService {
   private emotionService: EmotionService;
-  private schemaCache: string | null = null;
-  private schemaCacheTime: number = 0;
-  private readonly SCHEMA_CACHE_TTL = 60000; // 60 seconds (Workers can restart anytime)
 
   constructor(
     private dbService: DatabaseService,
@@ -89,7 +86,7 @@ Observe the conversation history to mirror the user's vibe:
       this.buildCrossChatContext(message, currentTime),
       message.chat.type !== 'private' ? this.buildGroupMembersInfo(message) : '',
       message.reply_to_message ? this.buildRepliedMessageInfo(message) : '',
-      this.getCachedSchema()
+      this.dbService.listTables()
     ]);
 
     // Build system instruction with current context
@@ -187,19 +184,6 @@ ${schemaInfo}
     });
 
     return history;
-  }
-
-  /**
-   * Get cached schema or fetch if expired
-   */
-  private async getCachedSchema(): Promise<string> {
-    const now = Date.now();
-    if (this.schemaCache && (now - this.schemaCacheTime) < this.SCHEMA_CACHE_TTL) {
-      return this.schemaCache;
-    }
-    this.schemaCache = await this.dbService.listTables();
-    this.schemaCacheTime = now;
-    return this.schemaCache;
   }
 
   /**
