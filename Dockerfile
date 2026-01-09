@@ -1,13 +1,13 @@
-# Use Bun official image
-FROM oven/bun:1-alpine
+# Use Node.js LTS Alpine
+FROM node:20-alpine
 
 WORKDIR /app
 
 # Copy package files
-COPY package.json bun.lockb* ./
+COPY package.json package-lock.json* ./
 
 # Install dependencies
-RUN bun install --frozen-lockfile
+RUN npm ci --only=production || npm install --production
 
 # Copy source code
 COPY . .
@@ -19,5 +19,5 @@ EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
 
-# Start application
-CMD ["bun", "run", "src/server.ts"]
+# Start application with tsx
+CMD ["npx", "tsx", "src/server.ts"]
