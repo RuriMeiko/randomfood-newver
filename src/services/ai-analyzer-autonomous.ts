@@ -183,15 +183,10 @@ export class AIAnalyzerService {
       
       const response = await this.toolCallingLoop(contextBuilder, message);
       
-      // Check if bot requests Google Search or Maps
+      // Check if bot requests Google Search
       if (response.intent === 'request_google_search') {
         console.log('🔍 [AIAnalyzer] Bot requested Google Search, calling search bot...');
         return await this.handleWithGoogleSearch(contextBuilder, message);
-      }
-      
-      if (response.intent === 'request_google_maps') {
-        console.log('🗺️ [AIAnalyzer] Bot requested Google Maps, calling maps bot...');
-        return await this.handleWithGoogleMaps(contextBuilder, message);
       }
 
       // Save conversation
@@ -753,139 +748,6 @@ NO markdown, NO code blocks, ONLY JSON.`;
   }
 
   /**
-   * Handle request with Google Maps grounding
-   */
-  private async handleWithGoogleMaps(
-    contextBuilder: any,
-    message?: TelegramMessage
-  ): Promise<AIResponse> {
-    console.log('🗺️ [AIAnalyzer] Using Google Maps bot...');
-
-    // Send typing indicator
-    await this.sendTypingAction(message?.chat.id);
-
-    const context: ContextResult = await contextBuilder.buildContext(message);
-    const conversationHistory: any[] = context.conversationHistory;
-
-    // Get user location
-    let userLocation: { latitude: number; longitude: number } | null = null;
-    if (context.metadata.userId) {
-      try {
-        const locationData = await this.dbService.executeSqlQuery(
-          `SELECT latitude, longitude FROM tg_users WHERE id = $1`,
-          [context.metadata.userId.toString()],
-          { reason: 'Get user location for Maps', userMessage: message?.text }
-        );
-        if (locationData.rows.length > 0 && locationData.rows[0].latitude) {
-          userLocation = {
-            latitude: parseFloat(locationData.rows[0].latitude),
-            longitude: parseFloat(locationData.rows[0].longitude)
-          };
-        }
-      } catch (error) {
-        console.warn('⚠️ [AIAnalyzer] Failed to get location:', error);
-      }
-    }
-
-    let retryCount = 0;
-    const MAX_RETRIES = 3;
-    
-    while (retryCount < MAX_RETRIES) {
-      try {
-        // Send typing before API call
-        await this.sendTypingAction(message?.chat.id);
-        
-        console.log(`📤 [AIAnalyzer] Sending Google Maps request (retry: ${retryCount})...`);
-        
-        // Build system instruction with JSON requirement
-        const mapsSystemInstruction = `${context.systemInstruction}
-
-CRITICAL: You MUST return ONLY valid JSON in this exact format:
-{
-  "type": "reply",
-  "messages": [{"text": "your message", "delay": "1000", "sticker": null}],
-  "intent": "maps_result"
-}
-NO markdown, NO code blocks, ONLY JSON.`;
-        
-        const config: any = {
-          thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
-          safetySettings: this.getSafetyConfig(),
-          systemInstruction: [{ text: mapsSystemInstruction }],
-          tools: [{ googleMaps: {} }]
-        };
-
-        // Add location context if available
-        if (userLocation) {
-          config.toolConfig = {
-            retrievalConfig: {
-              latLng: {
-                latitude: userLocation.latitude,
-                longitude: userLocation.longitude
-              }
-            }
-          };
-        }
-
-        const result = await this.apiKeyManager!.executeWithRetry(
-          (client) => client.models.generateContent({
-            model: 'gemini-flash-latest',
-            config,
-            contents: conversationHistory
-          })
-        );
-
-        console.log(`📥 [AIAnalyzer] Received Google Maps response`);
-
-        const candidate = result?.candidates?.[0];
-        
-        // Check for empty response
-        if (!candidate?.content?.parts || candidate.content.parts.length === 0) {
-          console.warn(`⚠️ [AIAnalyzer] Empty Google Maps response (retry ${retryCount + 1}/${MAX_RETRIES})`);
-          retryCount++;
-          if (retryCount < MAX_RETRIES) {
-            console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
-            await this.sleep(2000);
-            continue;
-          }
-          return {
-            messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
-            intent: 'maps_failed'
-          };
-        }
-        
-        const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
-        
-        if (textPart?.text) {
-          return this.parseFinalResponse(textPart.text);
-        }
-
-        return {
-          messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
-          intent: 'maps_failed'
-        };
-      } catch (error: any) {
-        console.error(`❌ [AIAnalyzer] Google Maps error (retry ${retryCount + 1}/${MAX_RETRIES}):`, error);
-        retryCount++;
-        if (retryCount < MAX_RETRIES) {
-          console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
-          await this.sleep(2000);
-          continue;
-        }
-        return {
-          messages: [{ text: 'Em bị lỗi khi tìm địa điểm 😢', delay: '800' }],
-          intent: 'error'
-        };
-      }
-    }
-    
-    return {
-      messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
-      intent: 'maps_failed'
-    };
-  }
-
-  /**
    * Parse the final text response from AI
    * Handles both JSON and plain text responses with improved fallback
    */
@@ -976,61 +838,11 @@ NO markdown, NO code blocks, ONLY JSON.`;
         intent: parsed.type || parsed.intent || 'reply'
       };
     } catch (error) {
-      console.warn('⚠️ [AIAnalyzer] JSON parsing failed, using smart text fallback');
-      console.log('📄 [AIAnalyzer] Parse error:', error);
+      console.warn('⚠️ [AIAnalyzer] Not valid JSON, treating as plain text response');
+      console.log('📄 [AIAnalyzer] Plain text response:', text.substring(0, 200));
       
-      // OPTIMIZATION 4: Smart text fallback - split long text into natural messages
-      const cleanText = text
-        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
-        .replace(/```(?:json)?[\s\S]*?```/g, '')
-        .trim();
-      
-      if (cleanText.length === 0) {
-        console.error('❌ [AIAnalyzer] Empty response after cleaning');
-        return {
-          messages: [{ text: 'Xin lỗi, em bị lỗi rồi 🥺', delay: '1000' }],
-          intent: 'error'
-        };
-      }
-      
-      console.log('✅ [AIAnalyzer] Using smart text fallback');
-      
-      // Split text into sentences for natural multi-message feel
-      const sentences = cleanText.split(/([.!?。]+)/).filter(s => s.trim());
-      const messages = [];
-      let currentMsg = '';
-      
-      for (const sentence of sentences) {
-        currentMsg += sentence;
-        if (/[.!?。]+/.test(sentence) && currentMsg.length > 20) {
-          messages.push({
-            text: currentMsg.trim(),
-            delay: (600 + Math.random() * 400).toFixed(0)
-          });
-          currentMsg = '';
-        }
-      }
-      
-      // Add remaining text
-      if (currentMsg.trim()) {
-        messages.push({
-          text: currentMsg.trim(),
-          delay: '800'
-        });
-      }
-      
-      // If no messages were created, use full text
-      if (messages.length === 0) {
-        messages.push({
-          text: cleanText,
-          delay: '1000'
-        });
-      }
-      
-      return {
-        messages: messages as any,
-        intent: 'reply'
-      };
+      // Throw error to trigger retry - don't accept plain text responses
+      throw new Error('AI returned plain text instead of JSON - needs retry');
     }
   }
   
@@ -1085,19 +897,19 @@ NO markdown, NO code blocks, ONLY JSON.`;
     return [
       {
         category: HarmCategory.HARM_CATEGORY_HARASSMENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
+        threshold: HarmBlockThreshold.OFF,
       },
       {
         category: HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
+        threshold: HarmBlockThreshold.OFF,
       },
       {
         category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
+        threshold: HarmBlockThreshold.OFF,
       },
       {
         category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-        threshold: HarmBlockThreshold.BLOCK_NONE,
+        threshold: HarmBlockThreshold.OFF,
       },
     ];
   }
