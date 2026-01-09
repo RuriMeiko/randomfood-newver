@@ -7,7 +7,7 @@ echo "🗄️  Initializing database..."
 
 if [ -z "$NEON_DATABASE_URL" ]; then
   echo "❌ Error: NEON_DATABASE_URL environment variable not set"
-  echo "Please set it in .dev.vars or export it:"
+  echo "Please set it in .env or export it:"
   echo "  export NEON_DATABASE_URL='postgresql://user:pass@host/db'"
   exit 1
 fi

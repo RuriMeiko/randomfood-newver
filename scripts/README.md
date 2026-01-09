@@ -38,7 +38,7 @@ const API_KEYS = [
 - ✅ Skips existing keys (safe to re-run)
 - ✅ Shows detailed progress
 - ✅ Displays summary table
-- ✅ Auto-loads `.dev.vars`
+- ✅ Auto-loads `.env`
 
 ---
 

@@ -96,8 +96,11 @@ export class AIAnalyzerService {
     await this.ensureInitialized();
 
     try {
-      // Detect request type to choose appropriate bot config
-      const requestType = await this.detectRequestType(userMessage);
+      // Build context first to get conversation history
+      const context = await contextBuilder.buildContext(message);
+      
+      // Detect request type with full context
+      const requestType = await this.detectRequestType(userMessage, context.conversationHistory);
       console.log(`🎯 [AIAnalyzer] Detected request type: ${requestType}`);
 
       let response: AIResponse;
@@ -136,18 +139,40 @@ export class AIAnalyzerService {
   }
 
   /**
-   * Detect request type from user message using AI classification
+   * Detect request type from user message using AI classification with full context
    */
-  private async detectRequestType(userMessage: string): Promise<'custom' | 'search' | 'places'> {
+  private async detectRequestType(
+    userMessage: string, 
+    conversationHistory: any[]
+  ): Promise<'custom' | 'search' | 'places'> {
     try {
-      const classificationPrompt = `Classify this user message into ONE category:
+      // Build classification prompt with recent context
+      const recentMessages = conversationHistory.slice(-6); // Last 3 exchanges
+      let contextText = 'Recent conversation:\n';
+      for (const msg of recentMessages) {
+        if (msg.role === 'user') {
+          const text = msg.parts?.[0]?.text || '';
+          if (text) contextText += `User: ${text}\n`;
+        } else if (msg.role === 'model') {
+          const text = msg.parts?.[0]?.text || '';
+          if (text && text.length < 200) contextText += `Bot: ${text}\n`;
+        }
+      }
+      
+      const classificationPrompt = `Based on the conversation context, classify the user's current request:
 
-User message: "${userMessage}"
+${contextText}
+Current user message: "${userMessage}"
 
 Categories:
-- "search": General web search queries (facts, news, information about something/someone)
-- "places": Location/restaurant/place queries (find nearby restaurants, cafes, shops, addresses)
-- "custom": Everything else (personal conversation, database queries, emotions, debt tracking, etc.)
+- "search": General web search queries (facts, news, information lookup, who/what/when questions about external topics)
+- "places": Location/restaurant/place queries (find nearby restaurants, cafes, shops, addresses, food recommendations)
+- "custom": Everything else (personal conversation, emotions, relationship talk, database queries, debt tracking, casual chat)
+
+IMPORTANT: 
+- If user is just chatting about their feelings, mood, or daily life → custom
+- If user is responding to bot's question or continuing personal conversation → custom
+- Only use "search" or "places" if user explicitly asks to look up external information
 
 Reply with ONLY ONE WORD: search, places, or custom`;
 
@@ -259,72 +284,116 @@ Reply with ONLY ONE WORD: search, places, or custom`;
         };
         
         let result;
-        if (this.apiKeyManager) {
-          // Build config with system instruction from context
-          const config: any = {
-            thinkingConfig: {
-              thinkingBudget: -1  // Disable thinking mode - output JSON directly
-            },
-            safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: context.systemInstruction }],
-            tools: [
-              { functionDeclarations: allTools }  // Custom function tools only
-            ]
-          };
+        let retryCount = 0;
+        const MAX_EMPTY_RETRIES = 3;
+        
+        // Retry loop for empty or invalid responses
+        while (retryCount < MAX_EMPTY_RETRIES) {
+          try {
+            console.log(`📤 [AIAnalyzer] Sending request to Gemini API (iteration: ${iteration}, retry: ${retryCount})...`);
+            
+            if (this.apiKeyManager) {
+              // Build config with system instruction from context
+              const config: any = {
+                thinkingConfig: {
+                  thinkingBudget: -1  // Disable thinking mode - output JSON directly
+                },
+                safetySettings: this.getSafetyConfig(),
+                systemInstruction: [{ text: context.systemInstruction }],
+                tools: [
+                  { functionDeclarations: allTools }  // Custom function tools only
+                ]
+              };
 
-          // Use ApiKeyManager with automatic retry
-          result = await this.apiKeyManager.executeWithRetry(
-            (client) => client.models.generateContent({
-              model: 'gemini-flash-latest',
-              config,
-              contents: conversationHistory
-            })
-          );
-        } else {
-          // Direct call without key rotation
-          const config: any = {
-            thinkingConfig: {
-              thinkingBudget: -1  // Disable thinking mode - output JSON directly
-            },
-            safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: context.systemInstruction }],
-            tools: [
-              { functionDeclarations: allTools }  // Custom function tools only
-            ]
-          };
+              // Use ApiKeyManager with automatic retry
+              result = await this.apiKeyManager.executeWithRetry(
+                (client) => client.models.generateContent({
+                  model: 'gemini-flash-latest',
+                  config,
+                  contents: conversationHistory
+                })
+              );
+            } else {
+              // Direct call without key rotation
+              const config: any = {
+                thinkingConfig: {
+                  thinkingBudget: -1  // Disable thinking mode - output JSON directly
+                },
+                safetySettings: this.getSafetyConfig(),
+                systemInstruction: [{ text: context.systemInstruction }],
+                tools: [
+                  { functionDeclarations: allTools }  // Custom function tools only
+                ]
+              };
 
-          result = await this.genAI.models.generateContent({
-            model: 'gemini-flash-latest',
-            config,
-            contents: conversationHistory
-          });
+              result = await this.genAI.models.generateContent({
+                model: 'gemini-flash-latest',
+                config,
+                contents: conversationHistory
+              });
+            }
+
+            console.log(`📥 [AIAnalyzer] Received response from Gemini API`);
+
+            const candidate = result?.candidates?.[0];
+            if (!candidate) {
+              console.warn(`⚠️ [AIAnalyzer] No candidate in response (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES})`);
+              retryCount++;
+              if (retryCount < MAX_EMPTY_RETRIES) {
+                console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+                await this.sleep(2000);
+                continue;
+              }
+              throw new Error('No candidate in response after retries');
+            }
+
+            const content = candidate.content;
+            
+            // Handle blocked/filtered responses
+            if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
+              console.warn(`⚠️ [AIAnalyzer] Response blocked by ${candidate.finishReason}`);
+              return {
+                messages: [{ text: 'Em không thể trả lời câu này được 😅', delay: '1000' }],
+                intent: 'blocked'
+              };
+            }
+            
+            // Handle empty content - retry instead of failing
+            if (!content || !content.parts || content.parts.length === 0) {
+              console.warn(`⚠️ [AIAnalyzer] Empty or missing content.parts in response (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES})`);
+              console.log('Full candidate:', JSON.stringify(candidate, null, 2));
+              
+              retryCount++;
+              if (retryCount < MAX_EMPTY_RETRIES) {
+                console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+                await this.sleep(2000);
+                continue;
+              }
+              
+              // All retries exhausted
+              return {
+                messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
+                intent: 'error'
+              };
+            }
+            
+            // Valid response received, break out of retry loop
+            break;
+            
+          } catch (retryError: any) {
+            console.error(`❌ [AIAnalyzer] Error in API call (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES}):`, retryError);
+            retryCount++;
+            if (retryCount < MAX_EMPTY_RETRIES) {
+              console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+              await this.sleep(2000);
+              continue;
+            }
+            throw retryError;
+          }
         }
-
+        
         const candidate = result?.candidates?.[0];
-        if (!candidate) {
-          throw new Error('No candidate in response');
-        }
-
         const content = candidate.content;
-        
-        // Handle blocked/filtered responses
-        if (candidate.finishReason === 'SAFETY' || candidate.finishReason === 'RECITATION') {
-          console.warn(`⚠️ [AIAnalyzer] Response blocked by ${candidate.finishReason}`);
-          return {
-            messages: [{ text: 'Em không thể trả lời câu này được 😅', delay: '1000' }],
-            intent: 'blocked'
-          };
-        }
-        
-        // Handle empty content
-        if (!content || !content.parts || content.parts.length === 0) {
-          console.warn('⚠️ [AIAnalyzer] Empty or missing content.parts in response');
-          console.log('Full candidate:', JSON.stringify(candidate, null, 2));
-          return {
-            messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
-            intent: 'error'
-          };
-        }
         
         // Ensure functionCalls is always an array (never undefined)
         const functionCalls = content?.parts?.filter((part: any) => part.functionCall) || [];
@@ -444,41 +513,77 @@ Reply with ONLY ONE WORD: search, places, or custom`;
     const context: ContextResult = await contextBuilder.buildContext(message);
     const conversationHistory: any[] = context.conversationHistory;
 
-    try {
-      // Send typing before API call
-      await this.sendTypingAction(message?.chat.id);
-      
-      const result = await this.apiKeyManager!.executeWithRetry(
-        (client) => client.models.generateContent({
-          model: 'gemini-flash-latest',
-          config: {
-            thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
-            safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: context.systemInstruction }],
-            tools: [{ googleSearch: {} }]
-          },
-          contents: conversationHistory
-        })
-      );
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    
+    while (retryCount < MAX_RETRIES) {
+      try {
+        // Send typing before API call
+        await this.sendTypingAction(message?.chat.id);
+        
+        console.log(`📤 [AIAnalyzer] Sending Google Search request (retry: ${retryCount})...`);
+        
+        const result = await this.apiKeyManager!.executeWithRetry(
+          (client) => client.models.generateContent({
+            model: 'gemini-flash-latest',
+            config: {
+              thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
+              safetySettings: this.getSafetyConfig(),
+              systemInstruction: [{ text: context.systemInstruction }],
+              tools: [{ googleSearch: {} }]
+            },
+            contents: conversationHistory
+          })
+        );
 
-      const candidate = result?.candidates?.[0];
-      const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
-      
-      if (textPart?.text) {
-        return this.parseFinalResponse(textPart.text);
+        console.log(`📥 [AIAnalyzer] Received Google Search response`);
+
+        const candidate = result?.candidates?.[0];
+        
+        // Check for empty response
+        if (!candidate?.content?.parts || candidate.content.parts.length === 0) {
+          console.warn(`⚠️ [AIAnalyzer] Empty Google Search response (retry ${retryCount + 1}/${MAX_RETRIES})`);
+          retryCount++;
+          if (retryCount < MAX_RETRIES) {
+            console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+            await this.sleep(2000);
+            continue;
+          }
+          return {
+            messages: [{ text: 'Em không tìm được thông tin 😢', delay: '1000' }],
+            intent: 'search_failed'
+          };
+        }
+        
+        const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
+        
+        if (textPart?.text) {
+          return this.parseFinalResponse(textPart.text);
+        }
+
+        return {
+          messages: [{ text: 'Em không tìm được thông tin 😢', delay: '1000' }],
+          intent: 'search_failed'
+        };
+      } catch (error: any) {
+        console.error(`❌ [AIAnalyzer] Google Search error (retry ${retryCount + 1}/${MAX_RETRIES}):`, error);
+        retryCount++;
+        if (retryCount < MAX_RETRIES) {
+          console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+          await this.sleep(2000);
+          continue;
+        }
+        return {
+          messages: [{ text: 'Em bị lỗi khi tìm kiếm 😢', delay: '800' }],
+          intent: 'error'
+        };
       }
-
-      return {
-        messages: [{ text: 'Em không tìm được thông tin 😢', delay: '1000' }],
-        intent: 'search_failed'
-      };
-    } catch (error: any) {
-      console.error('❌ [AIAnalyzer] Google Search error:', error);
-      return {
-        messages: [{ text: 'Em bị lỗi khi tìm kiếm 😢', delay: '800' }],
-        intent: 'error'
-      };
     }
+    
+    return {
+      messages: [{ text: 'Em không tìm được thông tin 😢', delay: '1000' }],
+      intent: 'search_failed'
+    };
   }
 
   /**
@@ -516,61 +621,101 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       }
     }
 
-    try {
-      // Send typing before API call
-      await this.sendTypingAction(message?.chat.id);
-      
-      const config: any = {
-        thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
-        safetySettings: this.getSafetyConfig(),
-        systemInstruction: [{ text: context.systemInstruction }],
-        tools: [{ googleMaps: {} }]
-      };
+    let retryCount = 0;
+    const MAX_RETRIES = 3;
+    
+    while (retryCount < MAX_RETRIES) {
+      try {
+        // Send typing before API call
+        await this.sendTypingAction(message?.chat.id);
+        
+        console.log(`📤 [AIAnalyzer] Sending Google Maps request (retry: ${retryCount})...`);
+        
+        const config: any = {
+          thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
+          safetySettings: this.getSafetyConfig(),
+          systemInstruction: [{ text: context.systemInstruction }],
+          tools: [{ googleMaps: {} }]
+        };
 
-      // Add location context if available
-      if (userLocation) {
-        config.toolConfig = {
-          retrievalConfig: {
-            latLng: {
-              latitude: userLocation.latitude,
-              longitude: userLocation.longitude
+        // Add location context if available
+        if (userLocation) {
+          config.toolConfig = {
+            retrievalConfig: {
+              latLng: {
+                latitude: userLocation.latitude,
+                longitude: userLocation.longitude
+              }
             }
+          };
+        }
+
+        const result = await this.apiKeyManager!.executeWithRetry(
+          (client) => client.models.generateContent({
+            model: 'gemini-flash-latest',
+            config,
+            contents: conversationHistory
+          })
+        );
+
+        console.log(`📥 [AIAnalyzer] Received Google Maps response`);
+
+        const candidate = result?.candidates?.[0];
+        
+        // Check for empty response
+        if (!candidate?.content?.parts || candidate.content.parts.length === 0) {
+          console.warn(`⚠️ [AIAnalyzer] Empty Google Maps response (retry ${retryCount + 1}/${MAX_RETRIES})`);
+          retryCount++;
+          if (retryCount < MAX_RETRIES) {
+            console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+            await this.sleep(2000);
+            continue;
           }
+          return {
+            messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
+            intent: 'maps_failed'
+          };
+        }
+        
+        const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
+        
+        if (textPart?.text) {
+          return this.parseFinalResponse(textPart.text);
+        }
+
+        return {
+          messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
+          intent: 'maps_failed'
+        };
+      } catch (error: any) {
+        console.error(`❌ [AIAnalyzer] Google Maps error (retry ${retryCount + 1}/${MAX_RETRIES}):`, error);
+        retryCount++;
+        if (retryCount < MAX_RETRIES) {
+          console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+          await this.sleep(2000);
+          continue;
+        }
+        return {
+          messages: [{ text: 'Em bị lỗi khi tìm địa điểm 😢', delay: '800' }],
+          intent: 'error'
         };
       }
-
-      const result = await this.apiKeyManager!.executeWithRetry(
-        (client) => client.models.generateContent({
-          model: 'gemini-flash-latest',
-          config,
-          contents: conversationHistory
-        })
-      );
-
-      const candidate = result?.candidates?.[0];
-      const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
-      
-      if (textPart?.text) {
-        return this.parseFinalResponse(textPart.text);
-      }
-
-      return {
-        messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
-        intent: 'maps_failed'
-      };
-    } catch (error: any) {
-      console.error('❌ [AIAnalyzer] Google Maps error:', error);
-      return {
-        messages: [{ text: 'Em bị lỗi khi tìm địa điểm 😢', delay: '800' }],
-        intent: 'error'
-      };
     }
+    
+    return {
+      messages: [{ text: 'Em không tìm được địa điểm nào 😢', delay: '1000' }],
+      intent: 'maps_failed'
+    };
   }
 
   /**
    * Parse the final text response from AI
+   * Handles both JSON and plain text responses
    */
   private parseFinalResponse(text: string): AIResponse {
+    console.log('🔍 [AIAnalyzer] Parsing final response...');
+    console.log('📄 [AIAnalyzer] Raw response length:', text.length, 'chars');
+    
     try {
       // Clean the text first - remove any thinking process or metadata that leaked through
       let cleanedText = text.trim();
@@ -620,21 +765,48 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       // Try to parse as JSON
       const parsed = JSON.parse(cleanedText);
       
+      console.log('✅ [AIAnalyzer] Successfully parsed JSON response');
+      console.log('📊 [AIAnalyzer] Message count:', parsed.messages?.length || 0);
+      
       // Return messages as-is (AI will naturally create multiple messages)
       return {
         messages: parsed.messages || [{ text: cleanedText, delay: '1000' }],
         intent: parsed.type || 'reply'
       };
     } catch (error) {
-      console.error('❌ [AIAnalyzer] Failed to parse response:', error);
-      console.error('📄 [AIAnalyzer] Raw text:', text);
+      console.warn('⚠️ [AIAnalyzer] Not valid JSON, treating as plain text response');
+      console.log('📄 [AIAnalyzer] Plain text response:', text.substring(0, 500));
       
-      // If parsing fails completely, return error message
+      // Not JSON - treat as plain text response (this is valid!)
+      // Some responses like from Google Search/Maps might be plain text
+      const cleanText = text
+        .replace(/<thinking>[\s\S]*?<\/thinking>/gi, '')
+        .replace(/```(?:json)?[\s\S]*?```/g, '')
+        .trim();
+      
+      if (cleanText.length === 0) {
+        console.error('❌ [AIAnalyzer] Empty response after cleaning');
+        return {
+          messages: [{ text: 'Xin lỗi, em bị lỗi rồi 🥺', delay: '1000' }],
+          intent: 'error'
+        };
+      }
+      
+      console.log('✅ [AIAnalyzer] Using plain text as response');
+      
+      // Return plain text as a single message
       return {
-        messages: [{ text: 'Xin lỗi, em bị lỗi rồi 🥺', delay: '1000' }],
-        intent: 'error'
+        messages: [{ text: cleanText, delay: '1000' }],
+        intent: 'reply'
       };
     }
+  }
+  
+  /**
+   * Sleep helper for retries
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
   }
 
   /**

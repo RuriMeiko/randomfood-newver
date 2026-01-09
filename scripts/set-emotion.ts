@@ -20,8 +20,8 @@ import { EMOTION_PRESETS, EmotionPreset, PRESET_DESCRIPTIONS } from './data/emot
 // ==========================================
 
 function loadDatabaseUrl(): string {
-  // Load từ .dev.vars
-  const devVarsPath = path.join(process.cwd(), '.dev.vars');
+  // Load từ .env
+  const devVarsPath = path.join(process.cwd(), '.env');
   let databaseUrl = process.env.NEON_DATABASE_URL || '';
   
   if (fs.existsSync(devVarsPath)) {
@@ -33,7 +33,7 @@ function loadDatabaseUrl(): string {
   }
 
   if (!databaseUrl) {
-    console.error('❌ NEON_DATABASE_URL not found in .dev.vars or environment');
+    console.error('❌ NEON_DATABASE_URL not found in .env or environment');
     process.exit(1);
   }
 

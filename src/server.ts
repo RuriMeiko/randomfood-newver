@@ -27,6 +27,14 @@ for (const envVar of requiredEnvVars) {
 const aiBot = new AIBot(process.env.NEON_DATABASE_URL!);
 console.log('✅ AI Bot initialized');
 
+// Debounce settings
+const DEBOUNCE_DELAY = 2500; // 2.5 seconds
+const pendingMessages = new Map<string, {
+  timeout: NodeJS.Timeout;
+  messages: TelegramMessage[];
+  lastMessage: TelegramMessage;
+}>();
+
 // Basic Auth middleware
 function checkBasicAuth(req: Request): boolean {
   const authHeader = req.headers.authorization;
@@ -102,19 +110,52 @@ function shouldRespondInGroup(body: any): boolean {
   const message = body.message;
   if (!message) return false;
 
-  // Always respond in private chats
-  if (message.chat.type === 'private') return true;
+  // Check if message has text
+  if (!message.text) {
+    console.log('🚫 No text in message - not responding');
+    return false;
+  }
 
-  // In groups: respond if bot is mentioned or message is a reply to bot
+  // Always respond in private chats
+  if (message.chat.type === 'private') {
+    console.log('✅ Private chat - responding');
+    return true;
+  }
+
+  // In groups: respond if bot is mentioned, message is a reply to bot, or contains keywords
   const botUsername = process.env.BOT_USERNAME || 'randomfood_newver_bot';
-  const text = message.text || '';
+  const text = message.text.toLowerCase();
   
   // Check if bot is mentioned
-  if (text.toLowerCase().includes(`@${botUsername.toLowerCase()}`)) return true;
+  if (text.includes(`@${botUsername.toLowerCase()}`)) {
+    console.log('✅ Bot mention found - responding');
+    return true;
+  }
   
   // Check if message is a reply to bot
-  if (message.reply_to_message?.from?.is_bot) return true;
+  if (message.reply_to_message?.from?.is_bot) {
+    console.log('✅ Reply to bot message - responding');
+    return true;
+  }
 
+  // Check for keywords
+  const keywords = ['nợ', 'meismaybot', 'mây'];
+  
+  console.log('🔍 Checking keywords...');
+  console.log('  Original text:', message.text);
+  console.log('  Text (lowercase):', text);
+  console.log('  Text length:', text.length);
+
+  for (const keyword of keywords) {
+    const found = text.includes(keyword);
+    console.log(`  Checking "${keyword}": ${found}`);
+    if (found) {
+      console.log(`✅ Keyword "${keyword}" found - responding`);
+      return true;
+    }
+  }
+
+  console.log('🚫 No trigger conditions met in group');
   return false;
 }
 
@@ -149,20 +190,47 @@ app.post('/webhook', async (req: Request, res: Response) => {
     const shouldRespond = shouldRespondInGroup(body);
     
     if (shouldRespond) {
-      // Process message async (don't block response)
-      setImmediate(async () => {
+      // Use debounce - wait to see if user sends more messages
+      const chatKey = `${message.chat.id}_${message.from?.id}`;
+      
+      // Clear existing timeout if any
+      if (pendingMessages.has(chatKey)) {
+        const pending = pendingMessages.get(chatKey)!;
+        clearTimeout(pending.timeout);
+        pending.messages.push(message);
+        pending.lastMessage = message;
+        console.log(`⏱️ Debouncing message (${pending.messages.length} messages queued)...`);
+      } else {
+        pendingMessages.set(chatKey, {
+          timeout: null as any,
+          messages: [message],
+          lastMessage: message
+        });
+        console.log('⏱️ Starting debounce timer...');
+      }
+      
+      // Set new timeout
+      const pending = pendingMessages.get(chatKey)!;
+      pending.timeout = setTimeout(async () => {
+        const messagesToProcess = pending.messages;
+        const lastMsg = pending.lastMessage;
+        pendingMessages.delete(chatKey);
+        
+        console.log(`✅ Debounce timer expired - processing ${messagesToProcess.length} message(s)...`);
+        
+        // Process the last message (most recent)
         try {
           await aiBot.processMessageWithMessagesAndStickers(
-            message, 
+            lastMsg, 
             process.env.API_TELEGRAM!
           );
           console.log('✅ Message processing complete');
         } catch (error) {
           console.error('❌ Error processing message:', error);
         }
-      });
+      }, DEBOUNCE_DELAY);
       
-      console.log('✅ Message processing started (async)');
+      console.log(`⏱️ Debounce active - will process in ${DEBOUNCE_DELAY}ms`);
     } else {
       // Save message without AI response (async)
       setImmediate(async () => {

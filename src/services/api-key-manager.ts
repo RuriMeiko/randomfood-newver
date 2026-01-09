@@ -118,7 +118,7 @@ export class ApiKeyManager {
     }
     
     // Check RPM limit
-    if (key.requestsPerMinute >= key.rpmLimit) {
+    if (key?.requestsPerMinute >= key.rpmLimit) {
       return false;
     }
     
@@ -288,6 +288,8 @@ export class ApiKeyManager {
     
     for (let attempt = 0; attempt < maxRetries; attempt++) {
       try {
+        console.log(`📡 [ApiKeyManager] Executing API request (attempt ${attempt + 1}/${maxRetries})...`);
+        
         const clientInfo = await this.createClient();
         
         if (!clientInfo) {
@@ -295,7 +297,14 @@ export class ApiKeyManager {
         }
         
         const { client, keyId } = clientInfo;
+        const key = this.keys.find(k => k.id === keyId);
+        console.log(`🔑 [ApiKeyManager] Using API key: ${key?.keyName || keyId}`);
+        
+        const startTime = Date.now();
         const result = await operation(client);
+        const duration = Date.now() - startTime;
+        
+        console.log(`✅ [ApiKeyManager] Request succeeded in ${duration}ms`);
         
         // Success! Report it
         await this.reportSuccess(keyId);
@@ -303,6 +312,9 @@ export class ApiKeyManager {
         
       } catch (error: any) {
         lastError = error;
+        
+        const duration = Date.now();
+        console.error(`❌ [ApiKeyManager] Request failed (attempt ${attempt + 1}/${maxRetries}):`, error?.message || error);
         
         // Check if it's a 429 error
         const is429 = this.is429Error(error);
@@ -323,11 +335,21 @@ export class ApiKeyManager {
           continue;
         }
         
+        // Log the error type for debugging
+        console.error(`🔍 [ApiKeyManager] Error type: ${error?.constructor?.name || typeof error}`);
+        console.error(`🔍 [ApiKeyManager] Error details:`, {
+          message: error?.message,
+          status: error?.status,
+          code: error?.code,
+          toString: error?.toString()
+        });
+        
         // Not a 429 error, throw immediately
         throw error;
       }
     }
     
+    console.error(`❌ [ApiKeyManager] All retry attempts exhausted`);
     throw lastError;
   }
 

@@ -6,7 +6,7 @@ README.md
 LICENSE
 .env
 .env.local
-.dev.vars
+.env
 logs
 *.log
 .vscode
