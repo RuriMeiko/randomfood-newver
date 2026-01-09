@@ -92,8 +92,8 @@ export class AIAnalyzerService {
               nullable: false
             },
             args: {
-              type: Type.OBJECT,
-              description: 'Arguments for the tool',
+              type: Type.STRING,
+              description: 'Arguments for the tool as JSON string',
               nullable: false
             }
           },
@@ -209,105 +209,7 @@ export class AIAnalyzerService {
   }
 
   /**
-   * Detect request type from user message using AI classification with full context
-   */
-  private async detectRequestType(
-    userMessage: string, 
-    conversationHistory: any[]
-  ): Promise<'custom' | 'search' | 'places'> {
-    // OPTIMIZATION 1: Fast keyword-based detection (skip AI call)
-    const msg = userMessage.toLowerCase();
-    
-    // Explicit place keywords - high confidence
-    const explicitPlaceKeywords = ['quán ăn', 'nhà hàng', 'quán cà phê', 'quán cafe', 'quán nào', 'ăn ở đâu', 'ăn gì', 'ăn gần'];
-    if (explicitPlaceKeywords.some(kw => msg.includes(kw))) {
-      console.log('🎯 [AIAnalyzer] Fast detection: places (explicit keywords)');
-      return 'places';
-    }
-    
-    // Explicit search keywords - high confidence  
-    const explicitSearchKeywords = ['ai là', 'là ai', 'tìm hiểu', 'tra cứu', 'thông tin về', 'tin tức'];
-    if (explicitSearchKeywords.some(kw => msg.includes(kw))) {
-      console.log('🎯 [AIAnalyzer] Fast detection: search (explicit keywords)');
-      return 'search';
-    }
-    
-    // Personal/emotional keywords - definitely custom
-    const personalKeywords = ['em', 'anh', 'mình', 'tui', 'nợ', 'thương', 'yêu', 'buồn', 'vui', 'giận'];
-    if (personalKeywords.some(kw => msg.includes(kw))) {
-      console.log('🎯 [AIAnalyzer] Fast detection: custom (personal keywords)');
-      return 'custom';
-    }
-    
-    // OPTIMIZATION 2: AI classification with context (only when needed)
-    try {
-      // Build classification prompt with recent context
-      const recentMessages = conversationHistory.slice(-6); // Last 3 exchanges
-      let contextText = 'Recent conversation:\n';
-      for (const msg of recentMessages) {
-        if (msg.role === 'user') {
-          const text = msg.parts?.[0]?.text || '';
-          if (text) contextText += `User: ${text}\n`;
-        } else if (msg.role === 'model') {
-          const text = msg.parts?.[0]?.text || '';
-          if (text && text.length < 200) contextText += `Bot: ${text}\n`;
-        }
-      }
-      
-      const classificationPrompt = `Based on the conversation context, classify the user's current request:
-
-${contextText}
-Current user message: "${userMessage}"
-
-Categories:
-- "search": General web search queries (facts, news, information lookup, who/what/when questions about external topics)
-- "places": Location/restaurant/place queries (find nearby restaurants, cafes, shops, addresses, food recommendations)
-- "custom": Everything else (personal conversation, emotions, relationship talk, database queries, debt tracking, casual chat)
-
-IMPORTANT: 
-- If user is just chatting about their feelings, mood, or daily life → custom
-- If user is responding to bot's question or continuing personal conversation → custom
-- Only use "search" or "places" if user explicitly asks to look up external information
-
-Reply with ONLY ONE WORD: search, places, or custom`;
-
-      const result = await this.apiKeyManager!.executeWithRetry(
-        (client) => client.models.generateContent({
-          model: 'gemini-2.0-flash-lite',
-          config: {
-            thinkingConfig: { thinkingBudget: 0 },
-            safetySettings: this.getSafetyConfig()
-          },
-          contents: [{ role: 'user', parts: [{ text: classificationPrompt }] }]
-        })
-      );
-
-      const candidate = result?.candidates?.[0];
-      const textPart = candidate?.content?.parts?.find((part: any) => part.text);
-      
-      if (textPart?.text) {
-        const classification = textPart.text.toLowerCase().trim();
-        if (classification.includes('search')) return 'search';
-        if (classification.includes('places')) return 'places';
-        if (classification.includes('custom')) return 'custom';
-      }
-    } catch (error) {
-      console.warn('⚠️ [AIAnalyzer] AI classification failed, using fallback:', error);
-    }
-    
-    // Fallback: keyword-based detection
-    const msg = userMessage.toLowerCase();
-    const placesKeywords = ['quán', 'nhà hàng', 'ăn gần', 'quán ăn', 'gần đây', 'nearby'];
-    if (placesKeywords.some(kw => msg.includes(kw))) return 'places';
-    
-    const searchKeywords = ['tìm kiếm', 'tra cứu', 'thông tin về', 'ai là', 'what is', 'who is'];
-    if (searchKeywords.some(kw => msg.includes(kw))) return 'search';
-    
-    return 'custom';
-  }
-
-  /**
-   * Tool calling loop with Gemini function calling
+   * Tool calling loop with planning approach
    */
   private async toolCallingLoop(
     contextBuilder: any, // ContextBuilderService
@@ -358,25 +260,8 @@ Reply with ONLY ONE WORD: search, places, or custom`;
       this.sendTypingAction(message?.chat.id).catch(() => {});
 
       try {
-        // Call Gemini with tools
-        // Note: We don't use responseSchema here because it conflicts with tool calling
-        // The model needs freedom to choose between calling tools or returning final response
-        
-        // Use ApiKeyManager if available, otherwise direct call
-        const generateContent = async () => {
-          return await this.genAI.models.generateContent({
-            model: 'gemini-flash-latest',
-            config: {
-              thinkingConfig: {
-                thinkingBudget: -1
-              },
-              safetySettings: this.getSafetyConfig(),
-              systemInstruction: [{ text: AUTONOMOUS_AGENT_PROMPT }],
-              tools: [{ functionDeclarations: allTools }]
-            },
-            contents: conversationHistory
-          });
-        };
+        // Planning approach: AI returns JSON planning, code executes tools manually
+        // This ensures responseSchema enforces valid JSON output always
         
         let result;
         let retryCount = 0;
@@ -388,25 +273,17 @@ Reply with ONLY ONE WORD: search, places, or custom`;
             console.log(`📤 [AIAnalyzer] Sending request to Gemini API (iteration: ${iteration}, retry: ${retryCount})...`);
             
             if (this.apiKeyManager) {
-              // Build config with system instruction from context
+              // Build config with planningSchema
               const config: any = {
                 thinkingConfig: {
                   thinkingBudget: -1  // Disable thinking mode - output JSON directly
                 },
                 safetySettings: this.getSafetyConfig(),
                 systemInstruction: [{ text: context.systemInstruction }],
-                tools: [
-                  { functionDeclarations: allTools }  // Custom function tools only
-                ]
+                responseSchema: this.planningSchema  // Use planning schema for tool orchestration
               };
               
-              // OPTIMIZATION 5: Add responseSchema on later iterations when likely to return final response
-              // First iteration: AI needs to call tools, don't constrain
-              // Later iterations: AI should return final response in JSON format
-              if (iteration > 2) {
-                config.responseSchema = this.responseSchema;
-                console.log('📋 [AIAnalyzer] Using responseSchema (iteration > 2)');
-              }
+              console.log('📋 [AIAnalyzer] Using planningSchema for tool planning');
 
               // Use ApiKeyManager with automatic retry
               result = await this.apiKeyManager.executeWithRetry(
@@ -424,9 +301,7 @@ Reply with ONLY ONE WORD: search, places, or custom`;
                 },
                 safetySettings: this.getSafetyConfig(),
                 systemInstruction: [{ text: context.systemInstruction }],
-                tools: [
-                  { functionDeclarations: allTools }  // Custom function tools only
-                ]
+                responseSchema: this.planningSchema
               };
 
               result = await this.genAI.models.generateContent({
@@ -461,10 +336,70 @@ Reply with ONLY ONE WORD: search, places, or custom`;
               };
             }
             
-            // Handle empty content - retry instead of failing
+            // Handle empty content
             if (!content || !content.parts || content.parts.length === 0) {
               console.warn(`⚠️ [AIAnalyzer] Empty or missing content.parts in response (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES})`);
-              console.log('Full candidate:', JSON.stringify(candidate, null, 2));
+              retryCount++;
+              if (retryCount < MAX_EMPTY_RETRIES) {
+                console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+                await this.sleep(2000);
+                continue;
+              }
+              
+              return {
+                messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
+                intent: 'error'
+              };
+            }
+            
+            // Extract and parse planning JSON
+            const textPart = content?.parts?.find((part: any) => part.text && !part.thought);
+            if (!textPart?.text) {
+              console.warn(`⚠️ [AIAnalyzer] No text in response (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES})`);
+              retryCount++;
+              if (retryCount < MAX_EMPTY_RETRIES) {
+                console.log(`⏳ [AIAnalyzer] Retrying in 2 seconds...`);
+                await this.sleep(2000);
+                continue;
+              }
+              
+              return {
+                messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
+                intent: 'error'
+              };
+            }
+            
+            // Parse planning JSON
+            let planning;
+            try {
+              planning = JSON.parse(textPart.text.trim());
+              console.log('✅ [AIAnalyzer] Valid planning JSON received');
+              console.log('📊 needs_tools:', planning.needs_tools);
+              console.log('🤔 reasoning:', planning.reasoning);
+              
+              // Validate tools_to_call structure
+              if (planning.needs_tools && planning.tools_to_call) {
+                console.log('🔍 [AIAnalyzer] Tools to call:', planning.tools_to_call.length);
+                for (let i = 0; i < planning.tools_to_call.length; i++) {
+                  const tool = planning.tools_to_call[i];
+                  console.log(`  Tool ${i + 1}:`, {
+                    name: tool.name,
+                    hasArgs: !!tool.args,
+                    argsType: typeof tool.args
+                  });
+                  
+                  if (!tool.name) {
+                    console.error(`❌ [AIAnalyzer] Tool ${i + 1} missing name field!`);
+                    console.error('  Full tool object:', JSON.stringify(tool));
+                  }
+                }
+              }
+              
+              break; // Success, exit retry loop
+            } catch (parseError: any) {
+              console.warn(`⚠️ [AIAnalyzer] Failed to parse planning JSON (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES})`);
+              console.log('📄 Parse error:', parseError.message);
+              console.log('📄 Raw text:', textPart.text.substring(0, 200));
               
               retryCount++;
               if (retryCount < MAX_EMPTY_RETRIES) {
@@ -473,15 +408,11 @@ Reply with ONLY ONE WORD: search, places, or custom`;
                 continue;
               }
               
-              // All retries exhausted
               return {
-                messages: [{ text: 'Em hơi bị loạn, thử lại nhé 🥺', delay: '1000' }],
+                messages: [{ text: 'Em bị loạn rồi, thử lại sau nha 🥺', delay: '1000' }],
                 intent: 'error'
               };
             }
-            
-            // Valid response received, break out of retry loop
-            break;
             
           } catch (retryError: any) {
             console.error(`❌ [AIAnalyzer] Error in API call (retry ${retryCount + 1}/${MAX_EMPTY_RETRIES}):`, retryError);
@@ -495,109 +426,150 @@ Reply with ONLY ONE WORD: search, places, or custom`;
           }
         }
         
+        // Extract planning from result
         const candidate = result?.candidates?.[0];
         const content = candidate.content;
+        const textPart = content?.parts?.find((part: any) => part.text && !part.thought);
+        const planning = JSON.parse(textPart.text.trim());
         
-        // Ensure functionCalls is always an array (never undefined)
-        const functionCalls = content?.parts?.filter((part: any) => part.functionCall) || [];
-
-        // If no function calls, we have a final response
-        if (functionCalls.length === 0) {
-          console.log('✅ [AIAnalyzer] Final response received (no more tool calls)');
+        // Check if AI needs to call tools
+        if (!planning.needs_tools || !planning.tools_to_call || planning.tools_to_call.length === 0) {
+          console.log('✅ [AIAnalyzer] No tools needed, returning direct response');
           
-          // Extract the text response (skip thinking parts)
-          const textPart = content?.parts?.find((part: any) => part.text && !part.thought);
-          if (textPart?.text) {
-            // console.log('\n📄 [AIAnalyzer] Final text response:');
-            // console.log(textPart.text);
-            // console.log('\n');
-            return this.parseFinalResponse(textPart.text);
-          }
+          // AI decided it can answer directly - but planningSchema doesn't have messages field!
+          // Need to call AI again with responseSchema to get final response
+          console.log('🔄 [AIAnalyzer] Getting final response with responseSchema...');
+          
+          // Build simple system instruction for final response (no tool stuff)
+          const finalSystemInstruction = `You are Mây, a Vietnamese Gen Z chatbot.
+          
+Your reasoning: ${planning.reasoning}
 
-          // Fallback if no text
+CRITICAL: You MUST output ONLY valid JSON following this structure:
+{
+  "type": "reply",
+  "messages": [
+    {"text": "Vietnamese message", "delay": "800", "sticker": null}
+  ],
+  "intent": "brief_intent"
+}
+
+Rules:
+- NO plain text, NO explanations
+- ONLY output the JSON object
+- Multiple messages for natural conversation flow
+- Vietnamese Gen Z tone (em/anh for special users)
+- NO English emotion names in messages`;
+          
+          // Add user prompt asking for final response
+          conversationHistory.push({
+            role: 'user',
+            parts: [{ text: 'Provide your response to the user in JSON format following the schema.' }]
+          });
+          
+          // Call AI again with responseSchema for final response
+          const finalConfig: any = {
+            thinkingConfig: { thinkingBudget: -1 },
+            safetySettings: this.getSafetyConfig(),
+            systemInstruction: [{ text: finalSystemInstruction }],
+            responseSchema: this.responseSchema  // Use response schema for final output
+          };
+          
+          const finalResult = await this.apiKeyManager!.executeWithRetry(
+            (client) => client.models.generateContent({
+              model: 'gemini-flash-latest',
+              config: finalConfig,
+              contents: conversationHistory
+            })
+          );
+          
+          const finalCandidate = finalResult?.candidates?.[0];
+          const finalTextPart = finalCandidate?.content?.parts?.find((part: any) => part.text && !part.thought);
+          
+          if (finalTextPart?.text) {
+            return this.parseFinalResponse(finalTextPart.text);
+          }
+          
           return {
             messages: [{ text: 'Xin lỗi, em chưa hiểu lắm 🥺', delay: '1000' }],
             intent: 'unknown'
           };
         }
 
-        // Execute all function calls
-        console.log(`🔧 [AIAnalyzer] Executing ${functionCalls.length} tool(s)...`);
+        // Execute tools manually
+        console.log(`🔧 [AIAnalyzer] Executing ${planning.tools_to_call.length} tool(s) manually...`);
         
         // Send typing indicator (non-blocking)
         this.sendTypingAction(message?.chat.id).catch(() => {});
         
-        // Add model's response with function calls to history
-        if (content && content.parts) {
-          conversationHistory.push({
-            role: 'model',
-            parts: content.parts
-          });
-        }
+        // Add AI's planning to conversation
+        conversationHistory.push({
+          role: 'model',
+          parts: [{ text: JSON.stringify(planning) }]
+        });
 
         // Execute tools and collect results
-        // OPTIMIZATION 6: Parallel execution for independent tools
         const toolResults: any[] = [];
         
-        // Check if tools can run in parallel (all read-only operations)
-        const canRunParallel = functionCalls.every((fcPart: any) => {
-          const toolName = fcPart.functionCall?.name;
-          // Read-only tools that can run in parallel
-          const readOnlyTools = ['inspect_schema', 'describe_table', 'list_tables', 'get_user_location'];
-          return readOnlyTools.includes(toolName);
-        });
+        // Check if tools can run in parallel (all read-only)
+        const readOnlyTools = ['inspect_schema', 'describe_table', 'list_tables', 'get_user_location'];
+        const canRunParallel = planning.tools_to_call.every((tool: any) => 
+          readOnlyTools.includes(tool.name)
+        );
         
-        if (canRunParallel && functionCalls.length > 1) {
-          console.log(`⚡ [AIAnalyzer] Executing ${functionCalls.length} tools in parallel...`);
+        if (canRunParallel && planning.tools_to_call.length > 1) {
+          console.log(`⚡ [AIAnalyzer] Executing ${planning.tools_to_call.length} tools in parallel...`);
           
-          // Execute all tools in parallel
-          const toolPromises = functionCalls.map(async (fcPart: any) => {
-            const fc = fcPart.functionCall;
-            if (!fc || !fc.name) {
-              console.warn('⚠️ [AIAnalyzer] Invalid function call, skipping');
-              return null;
+          const toolPromises = planning.tools_to_call.map(async (tool: any) => {
+            console.log(`🔧 [AIAnalyzer] === TOOL CALL (parallel): ${tool.name} ===`);
+            
+            // Parse args from JSON string
+            let parsedArgs = {};
+            try {
+              parsedArgs = typeof tool.args === 'string' ? JSON.parse(tool.args) : tool.args;
+            } catch (e) {
+              console.warn('⚠️ Failed to parse tool args:', tool.args);
             }
             
-            console.log(`🔧 [AIAnalyzer] === TOOL CALL (parallel): ${fc.name} ===`);
-            console.log('📥 Arguments:', JSON.stringify(fc.args, null, 2));
+            console.log('📥 Arguments:', JSON.stringify(parsedArgs, null, 2));
             
             const result = await this.toolExecutor.executeTool(
-              { name: fc.name, args: fc.args || {} },
+              { name: tool.name, args: parsedArgs },
               toolContext
             );
 
-            console.log(`📤 ${fc.name} Result:`, result.success ? '✅ Success' : '❌ Failed');
+            console.log(`📤 ${tool.name} Result:`, result.success ? '✅ Success' : '❌ Failed');
             
             return {
-              functionResponse: {
-                name: fc.name,
-                response: { content: result.content }
-              }
+              tool: tool.name,
+              result: result.content
             };
           });
           
           const results = await Promise.all(toolPromises);
-          toolResults.push(...results.filter((r: any) => r !== null));
+          toolResults.push(...results);
           
         } else {
-          // Execute tools sequentially (has write operations or single tool)
-          console.log(`🔧 [AIAnalyzer] Executing ${functionCalls.length} tool(s) sequentially...`);
+          console.log(`🔧 [AIAnalyzer] Executing ${planning.tools_to_call.length} tool(s) sequentially...`);
           
-          for (const fcPart of functionCalls) {
-            const fc = fcPart.functionCall;
-            if (!fc || !fc.name) {
-              console.warn('⚠️ [AIAnalyzer] Invalid function call, skipping');
-              continue;
+          for (const tool of planning.tools_to_call) {
+            console.log(`\n🔧 [AIAnalyzer] === TOOL CALL: ${tool.name} ===`);
+            
+            // Parse args from JSON string
+            let parsedArgs = {};
+            try {
+              parsedArgs = typeof tool.args === 'string' ? JSON.parse(tool.args) : tool.args;
+            } catch (e) {
+              console.warn('⚠️ Failed to parse tool args:', tool.args);
             }
             
-            console.log(`\n🔧 [AIAnalyzer] === TOOL CALL: ${fc.name} ===`);
-            console.log('📥 Arguments:', JSON.stringify(fc.args, null, 2));
+            console.log('📥 Arguments:', JSON.stringify(parsedArgs, null, 2));
             
-            // Send typing indicator before each tool execution
+            // Send typing indicator before each tool
             await this.sendTypingAction(message?.chat.id);
             
             const result = await this.toolExecutor.executeTool(
-              { name: fc.name, args: fc.args || {} },
+              { name: tool.name, args: parsedArgs },
               toolContext
             );
 
@@ -610,21 +582,23 @@ Reply with ONLY ONE WORD: search, places, or custom`;
             }
 
             toolResults.push({
-              functionResponse: {
-                name: fc.name,
-                response: { content: result.content }
-              }
+              tool: tool.name,
+              result: result.content
             });
           }
         }
 
-        // Send typing indicator after tools complete, before next iteration
+        // Send typing indicator after tools complete
         await this.sendTypingAction(message?.chat.id);
         
-        // Add tool results to conversation
+        // Add tool results to conversation in a structured way
+        const toolResultsText = toolResults.map(tr => 
+          `Tool: ${tr.tool}\nResult: ${tr.result}`
+        ).join('\n\n');
+        
         conversationHistory.push({
           role: 'user',
-          parts: toolResults
+          parts: [{ text: `Tool execution results:\n\n${toolResultsText}` }]
         });
 
         console.log('\n✅ [AIAnalyzer] Tool results added to conversation');

@@ -77,16 +77,14 @@ Observe the conversation history to mirror the user's vibe:
       emotionalContext,
       crossChatContext,
       groupMembersInfo,
-      repliedMessageInfo,
-      schemaInfo
+      repliedMessageInfo
     ] = await Promise.all([
       this.dbService.getUserId(tgUserId),
       message.chat.type === 'private' ? null : this.dbService.getGroupId(message.chat.id),
       this.emotionService.getEmotionalContext(),
       this.buildCrossChatContext(message, currentTime),
       message.chat.type !== 'private' ? this.buildGroupMembersInfo(message) : '',
-      message.reply_to_message ? this.buildRepliedMessageInfo(message) : '',
-      this.dbService.listTables()
+      message.reply_to_message ? this.buildRepliedMessageInfo(message) : ''
     ]);
 
     // Build system instruction with current context
@@ -126,10 +124,61 @@ ${message.chat.type === 'private'
 - When someone asks something, answer for everyone to see`
 }${groupMembersInfo}${repliedMessageInfo}${crossChatContext}
 
-=== 🗄️ DATABASE TABLES ===
-${schemaInfo}
+=== 🗄️ DATABASE - IMPORTANT ===
+⚠️ You DO NOT know the database structure.
+📋 Database structure is DISCOVERED via tools, NOT provided here.
 
-💡 Use tools: describe_table(name), execute_sql() for queries.`;
+WORKFLOW:
+1. If user asks about data (debts, aliases, etc.) → Call inspect_schema first
+2. Read the schema returned to understand table/column names
+3. Then call execute_sql with correct column names
+4. NEVER assume column names - always check first!
+
+=== 🛠️ TOOL DEFINITIONS ===
+When you need to call tools (needs_tools: true), you MUST provide:
+- name: Tool name (string)
+- args: Arguments as JSON STRING (not object)
+
+Available tools:
+
+1. **inspect_schema** - Get all tables and columns
+   Format: {"name": "inspect_schema", "args": "{}"}
+   
+2. **describe_table** - Get detailed table structure
+   Format: {"name": "describe_table", "args": "{\\"tableName\\": \\"debts\\"}"}
+
+3. **execute_sql** - Run SQL query
+   Format: {"name": "execute_sql", "args": "{\\"query\\": \\"SELECT * FROM table WHERE col = $1\\", \\"params\\": [\\"value\\"]}"}
+   IMPORTANT: Args must have "query" (not "sql_query") and "params" fields
+
+4. **get_user_location** - Get user location
+   Format: {"name": "get_user_location", "args": "{\\"tgId\\": 123456}"}
+
+5. **analyze_interaction** - Update emotions
+   Format: {"name": "analyze_interaction", "args": "{\\"userMessage\\": \\"text\\", \\"valence\\": 0.5, \\"intensity\\": 0.3, \\"targetEmotions\\": [\\"vui\\"]}"}
+
+CRITICAL EXAMPLE - Correct planning JSON:
+{
+  "needs_tools": true,
+  "tools_to_call": [
+    {
+      "name": "inspect_schema",
+      "args": "{}"
+    }
+  ],
+  "reasoning": "Need to check database structure first"
+}
+
+WRONG - Missing name or wrong arg field names:
+{
+  "needs_tools": true,
+  "tools_to_call": [
+    {"args": "{...}"}  // ❌ Missing name!
+    {"name": "execute_sql", "args": "{\\"sql_query\\": \\"...\\"}"}  // ❌ Wrong field name!
+  ],
+  "reasoning": "..."
+}`;
+
     console.log(`✅ [ContextBuilder] System instruction length: ${contextualSystemPrompt.length} chars`);
     console.log(`🎭 [ContextBuilder] Pronoun mode: ${isSpecialUser ? 'em/anh (special user)' : 'adaptive (based on user style)'}`);
     console.log(`💬 [ContextBuilder] Chat type: ${message.chat.type} | Cross-chat: ${crossChatContext ? 'Yes' : 'No'}`);
