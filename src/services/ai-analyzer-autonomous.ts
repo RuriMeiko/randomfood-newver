@@ -29,14 +29,49 @@ export class AIAnalyzerService {
   private apiKeyManager: ApiKeyManager | null = null;
   private initPromise: Promise<void> | null = null;
   
-  // Response schema for structured JSON output
-  private readonly responseSchema = {
+  // Unified schema for both planning and response phases
+  // Phase 1 (Planning): needs_tools=true, populate tools_to_call and reasoning
+  // Phase 2 (Response): needs_tools=false, populate type, messages, and intent
+  private readonly unifiedSchema = {
     type: Type.OBJECT,
     properties: {
+      // Planning phase fields (used when needs_tools=true)
+      needs_tools: {
+        type: Type.BOOLEAN,
+        description: 'Whether tools need to be called to answer the question',
+        nullable: false
+      },
+      tools_to_call: {
+        type: Type.ARRAY,
+        items: {
+          type: Type.OBJECT,
+          properties: {
+            name: {
+              type: Type.STRING,
+              description: 'Tool name to call',
+              nullable: false
+            },
+            args: {
+              type: Type.STRING,
+              description: 'Arguments for the tool as JSON string',
+              nullable: false
+            }
+          },
+          required: ['name', 'args']
+        },
+        description: 'List of tools to call (only when needs_tools=true)',
+        nullable: true
+      },
+      reasoning: {
+        type: Type.STRING,
+        description: 'Brief reasoning for decisions',
+        nullable: true
+      },
+      // Response phase fields (used when needs_tools=false)
       type: {
         type: Type.STRING,
-        description: 'Type of response',
-        nullable: false
+        description: 'Type of response (only when needs_tools=false)',
+        nullable: true
       },
       messages: {
         type: Type.ARRAY,
@@ -61,53 +96,16 @@ export class AIAnalyzerService {
           },
           required: ['text', 'delay']
         },
-        description: 'Array of messages to send'
+        description: 'Array of messages to send (only when needs_tools=false)',
+        nullable: true
       },
       intent: {
         type: Type.STRING,
-        description: 'Brief intent description',
-        nullable: false
+        description: 'Brief intent description (only when needs_tools=false)',
+        nullable: true
       }
     },
-    required: ['type', 'messages', 'intent']
-  };
-  
-  // Planning schema - AI decides what tools to call
-  private readonly planningSchema = {
-    type: Type.OBJECT,
-    properties: {
-      needs_tools: {
-        type: Type.BOOLEAN,
-        description: 'Whether tools need to be called to answer the question',
-        nullable: false
-      },
-      tools_to_call: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            name: {
-              type: Type.STRING,
-              description: 'Tool name to call',
-              nullable: false
-            },
-            args: {
-              type: Type.STRING,
-              description: 'Arguments for the tool as JSON string',
-              nullable: false
-            }
-          },
-          required: ['name', 'args']
-        },
-        description: 'List of tools to call with their arguments'
-      },
-      reasoning: {
-        type: Type.STRING,
-        description: 'Brief reasoning for tool selection or direct response',
-        nullable: false
-      }
-    },
-    required: ['needs_tools', 'tools_to_call', 'reasoning']
+    required: ['needs_tools']
   };
 
   constructor(private dbService: DatabaseService, databaseUrl?: string) {
@@ -280,10 +278,10 @@ export class AIAnalyzerService {
                 },
                 safetySettings: this.getSafetyConfig(),
                 systemInstruction: [{ text: context.systemInstruction }],
-                responseSchema: this.planningSchema  // Use planning schema for tool orchestration
+                responseSchema: this.unifiedSchema  // Use unified schema
               };
               
-              console.log('📋 [AIAnalyzer] Using planningSchema for tool planning');
+              console.log('📋 [AIAnalyzer] Using unifiedSchema for planning phase');
 
               // Use ApiKeyManager with automatic retry
               result = await this.apiKeyManager.executeWithRetry(
@@ -301,7 +299,7 @@ export class AIAnalyzerService {
                 },
                 safetySettings: this.getSafetyConfig(),
                 systemInstruction: [{ text: context.systemInstruction }],
-                responseSchema: this.planningSchema
+                responseSchema: this.unifiedSchema
               };
 
               result = await this.genAI.models.generateContent({
@@ -434,45 +432,32 @@ export class AIAnalyzerService {
         
         // Check if AI needs to call tools
         if (!planning.needs_tools || !planning.tools_to_call || planning.tools_to_call.length === 0) {
-          console.log('✅ [AIAnalyzer] No tools needed, returning direct response');
+          console.log('✅ [AIAnalyzer] No tools needed (needs_tools=false)');
           
-          // AI decided it can answer directly - but planningSchema doesn't have messages field!
-          // Need to call AI again with responseSchema to get final response
-          console.log('🔄 [AIAnalyzer] Getting final response with responseSchema...');
+          // Check if response fields are populated in the same response
+          if (planning.messages && Array.isArray(planning.messages) && planning.messages.length > 0) {
+            console.log('✅ [AIAnalyzer] Direct response with messages already in planning object');
+            return {
+              messages: planning.messages,
+              intent: planning.intent || planning.type || 'reply'
+            };
+          }
           
-          // Build simple system instruction for final response (no tool stuff)
-          const finalSystemInstruction = `You are Mây, a Vietnamese Gen Z chatbot.
-          
-Your reasoning: ${planning.reasoning}
-
-CRITICAL: You MUST output ONLY valid JSON following this structure:
-{
-  "type": "reply",
-  "messages": [
-    {"text": "Vietnamese message", "delay": "800", "sticker": null}
-  ],
-  "intent": "brief_intent"
-}
-
-Rules:
-- NO plain text, NO explanations
-- ONLY output the JSON object
-- Multiple messages for natural conversation flow
-- Vietnamese Gen Z tone (em/anh for special users)
-- NO English emotion names in messages`;
+          // If not, need to call AI again with needs_tools=false hint
+          console.log('🔄 [AIAnalyzer] Calling AI again for final response (needs_tools=false)...');
           
           // Add user prompt asking for final response
           conversationHistory.push({
             role: 'user',
-            parts: [{ text: 'Provide your response to the user in JSON format following the schema.' }]
+            parts: [{ text: 'Now provide your final response to the user. Set needs_tools=false and populate type, messages, and intent fields.' }]
           });
           
-          // Call AI again with responseSchema for final response
+          // Call AI again with same unified schema
           const finalConfig: any = {
             thinkingConfig: { thinkingBudget: -1 },
             safetySettings: this.getSafetyConfig(),
-            systemInstruction: [{ text: finalSystemInstruction }],
-            responseSchema: this.responseSchema  // Use response schema for final output
+            systemInstruction: [{ text: context.systemInstruction }],
+            responseSchema: this.unifiedSchema  // Same schema, AI will set needs_tools=false
           };
           
           const finalResult = await this.apiKeyManager!.executeWithRetry(
@@ -487,7 +472,13 @@ Rules:
           const finalTextPart = finalCandidate?.content?.parts?.find((part: any) => part.text && !part.thought);
           
           if (finalTextPart?.text) {
-            return this.parseFinalResponse(finalTextPart.text);
+            const finalParsed = JSON.parse(finalTextPart.text.trim());
+            if (finalParsed.messages && Array.isArray(finalParsed.messages)) {
+              return {
+                messages: finalParsed.messages,
+                intent: finalParsed.intent || finalParsed.type || 'reply'
+              };
+            }
           }
           
           return {
@@ -647,15 +638,10 @@ Rules:
         
         console.log(`📤 [AIAnalyzer] Sending Google Search request (retry: ${retryCount})...`);
         
-        // Build system instruction with JSON requirement
+        // Build system instruction for Google Search response
         const searchSystemInstruction = `${context.systemInstruction}
 
-CRITICAL: You MUST return ONLY valid JSON in this exact format:
-{
-  "type": "reply",
-  "messages": [{"text": "your message", "delay": "1000", "sticker": null}],
-  "intent": "search_result"
-}
+CRITICAL: Set needs_tools=false and populate type, messages, and intent fields with search results.
 NO markdown, NO code blocks, ONLY JSON.`;
         
         const result = await this.apiKeyManager!.executeWithRetry(
@@ -665,6 +651,7 @@ NO markdown, NO code blocks, ONLY JSON.`;
               thinkingConfig: { thinkingBudget: -1 },  // Disable thinking mode
               safetySettings: this.getSafetyConfig(),
               systemInstruction: [{ text: searchSystemInstruction }],
+              responseSchema: this.unifiedSchema,  // Use unified schema with needs_tools=false
               tools: [{ googleSearch: {} }]
             },
             contents: conversationHistory
@@ -693,7 +680,13 @@ NO markdown, NO code blocks, ONLY JSON.`;
         const textPart = candidate?.content?.parts?.find((part: any) => part.text && !part.thought);
         
         if (textPart?.text) {
-          return this.parseFinalResponse(textPart.text);
+          const parsed = JSON.parse(textPart.text.trim());
+          if (parsed.messages && Array.isArray(parsed.messages)) {
+            return {
+              messages: parsed.messages,
+              intent: parsed.intent || parsed.type || 'search_result'
+            };
+          }
         }
 
         return {
